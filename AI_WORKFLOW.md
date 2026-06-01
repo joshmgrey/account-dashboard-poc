@@ -29,11 +29,11 @@ OWASP).
 Because the generation environment couldn't run builds, these still need to be
 confirmed locally (see the README "Running" section):
 
-- [ ] `mvn test` passes (backend compiles, auth tests green)
-- [ ] `npm install && npm run build` passes (frontend typechecks/builds)
-- [ ] Manual smoke test: login, see own accounts, logout, 401 when logged out
-- [ ] Rate limit returns `429` under rapid repeated requests
-- [ ] Login lockout triggers after repeated failures
+- [x] `mvn test` passes (backend compiles, auth tests green)
+- [x] `npm install && npm run build` passes (frontend typechecks/builds)
+- [x] Manual smoke test: login, see own accounts, logout, 401 when logged out
+- [x] Rate limit returns `429` under rapid repeated requests
+- [x] Login lockout triggers after repeated failures
 
 ## Patterns I'm studying
 
