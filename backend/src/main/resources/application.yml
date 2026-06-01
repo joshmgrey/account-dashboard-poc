@@ -1,17 +1,53 @@
 server:
   port: 8080
+  # Don't leak the server implementation in responses.
+  server-header: ""
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
 
 spring:
   application:
     name: account-dashboard-backend
 
-# CORS origins allowed to call the API in development (Vite dev server).
 app:
   cors:
+    # Origins allowed to call the API in development (Vite dev server).
     allowed-origins: http://localhost:5173
+  security:
+    jwt:
+      # IMPORTANT: override via the APP_SECURITY_JWT_SECRET env var in any real
+      # deployment. Must be at least 32 bytes for HS256. This default exists
+      # only so the POC runs out of the box.
+      secret: ${APP_SECURITY_JWT_SECRET:change-me-dev-only-secret-please-override-32+bytes}
+      # Token lifetime in minutes.
+      expiration-minutes: 30
+    cookie:
+      name: ACCESS_TOKEN
+      # Set to true in production (requires HTTPS). Left false so the cookie
+      # works over http://localhost during development.
+      secure: ${APP_SECURITY_COOKIE_SECURE:false}
+      same-site: Strict
+  ratelimit:
+    # Global per-IP request budget.
+    capacity: 120
+    refill-per-minute: 120
+    # Stricter budget for authentication endpoints (brute-force defense).
+    auth-capacity: 8
+    auth-refill-per-minute: 8
+  login:
+    # Lock an account after this many consecutive failures...
+    max-attempts: 5
+    # ...for this long (minutes).
+    lock-minutes: 15
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health
+  endpoint:
+    health:
+      show-details: never

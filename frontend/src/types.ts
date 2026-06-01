@@ -6,3 +6,8 @@ export interface Account {
   balance: number
   status: string
 }
+
+export interface User {
+  username: string
+  displayName: string
+}
