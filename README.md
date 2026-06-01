@@ -5,6 +5,32 @@ accounts and balances. Built with a Spring Boot backend and a Vite + React +
 TypeScript frontend, with security hardening against brute-force and
 denial-of-service abuse.
 
+## About this project
+
+A learning project exploring authenticated banking dashboards with AI-assisted
+development. The goals are (1) practicing full-stack auth and security in a
+realistic small app, and (2) demonstrating deliberate use of AI tools — using
+Cursor to accelerate scaffolding while studying the resulting patterns deeply
+enough to defend them. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for the workflow log.
+
+> **Note on AI-assisted development:** Much of this project — not just the
+> security baseline — was scaffolded with Cursor as part of an AI-assisted
+> workflow. I'm working through each pattern in depth to make sure I understand
+> the rationale and tradeoffs, not just the code. See
+> [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for running notes on what was generated,
+> what I'm verifying, and the patterns I'm working through.
+
+**Status:** Active work in progress. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for current focus areas.
+
+## Status
+
+- ✅ Project scaffold (backend + frontend)
+- ✅ Authentication (JWT in httpOnly cookie, BCrypt, lockout)
+- ✅ Security hardening (rate limiting, headers, enumeration resistance)
+- 🚧 Verification (manual smoke tests still pending — see [`AI_WORKFLOW.md`](AI_WORKFLOW.md))
+- ⏳ Account detail view
+- ⏳ Future: real datastore, distributed rate limiting
+
 ## Project layout
 
 ```
@@ -70,13 +96,6 @@ Then open `http://localhost:5173` and sign in.
    credentials and relies on the cookie.
 
 ## Security hardening
-
-> **Note on AI-assisted development:** Much of this security baseline was
-> scaffolded with Cursor as part of an AI-assisted workflow. I'm currently
-> studying each pattern in depth to make sure I understand the rationale
-> and tradeoffs, not just the code. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for
-> running notes on what was generated, what I'm verifying, and the patterns
-> I'm working through.
 
 This POC demonstrates several defensive measures:
 
