@@ -27,7 +27,7 @@ enough to defend them. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for the workflow l
 - ✅ Project scaffold (backend + frontend)
 - ✅ Authentication (JWT in httpOnly cookie, BCrypt, lockout)
 - ✅ Security hardening (rate limiting, headers, enumeration resistance)
-- 🚧 Verification (manual smoke tests still pending — see [`AI_WORKFLOW.md`](AI_WORKFLOW.md))
+- ✅ Verification (`mvn test`, build, smoke tests, 429, lockout all confirmed)
 - ⏳ Account detail view
 - ⏳ Future: real datastore, distributed rate limiting
 

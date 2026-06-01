@@ -26,8 +26,8 @@ OWASP).
 
 ## Verification checklist
 
-Because the generation environment couldn't run builds, these still need to be
-confirmed locally (see the README "Running" section):
+The generation environment couldn't run builds, so these were confirmed locally
+afterward (see the README "Running" section). All passing as of Day 1:
 
 - [x] `mvn test` passes (backend compiles, auth tests green)
 - [x] `npm install && npm run build` passes (frontend typechecks/builds)
