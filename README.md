@@ -71,6 +71,13 @@ Then open `http://localhost:5173` and sign in.
 
 ## Security hardening
 
+> **Note on AI-assisted development:** Much of this security baseline was
+> scaffolded with Cursor as part of an AI-assisted workflow. I'm currently
+> studying each pattern in depth to make sure I understand the rationale
+> and tradeoffs, not just the code. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for
+> running notes on what was generated, what I'm verifying, and the patterns
+> I'm working through.
+
 This POC demonstrates several defensive measures:
 
 - **Rate limiting (DoS defense):** a per-IP token-bucket filter
