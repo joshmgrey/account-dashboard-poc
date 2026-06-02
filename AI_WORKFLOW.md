@@ -109,6 +109,20 @@ Caffeine's O(1) LRU (and likely a shared store like Redis for multi-instance).
 Biggest takeaway: the exercise of explaining each piece in plain English without
 notes surfaced gaps that surface-level reading had glossed over.
 
+### Day 2 — Cookie security, XSS, CSRF
+Traced the login cookie flow: `AuthController.login()` issues a JWT, then
+`AuthCookieService.buildAccessTokenCookie()` wraps it in a `ResponseCookie` with
+`httpOnly` hardcoded `true`, `path='/'` hardcoded, and `secure`/`sameSite`
+config-driven via `cookieProps`. Noticed that login and logout share the same
+`baseCookie()` builder — important because browsers won't delete a cookie unless
+the replacement's attributes (name, path, domain) match.
+
+Studied XSS and CSRF attack mechanics and the specific defense each cookie flag
+provides. Key nuance: `HttpOnly` stops cookie *exfiltration*, not the XSS attack
+itself — the real XSS defense is preventing script execution in the first place
+via output encoding, framework defaults, and CSP. `SameSite` and `Secure` are
+about CSRF and transport, not XSS.
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.
