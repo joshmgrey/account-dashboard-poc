@@ -123,6 +123,44 @@ itself — the real XSS defense is preventing script execution in the first plac
 via output encoding, framework defaults, and CSP. `SameSite` and `Secure` are
 about CSRF and transport, not XSS.
 
+### Day 3 — Login lockout
+Traced `LoginAttemptService` to understand how repeated failed logins are
+handled. Per-username failure tracking lives in a
+`ConcurrentHashMap<String, Attempts>`, where `Attempts` is an immutable record
+bundling the failure count and an optional lock expiry. The record exists for
+atomicity — bundling the two fields into one immutable value lets `compute()`
+update both atomically per key. Two separate maps would race.
+
+After 5 failures the account locks for 15 minutes. Both are configurable via
+`AppProperties.Login`. Unlock is lazy — there's no background sweeper. The
+expiry just gets checked on the next login attempt for that user, and the entry
+is removed at that point.
+
+Two limitations worth knowing.
+
+First, the map isn't bounded. Unlike the rate limiter, there's no LRU eviction
+or size cap. An attacker could spoof many usernames to grow the map and exhaust
+memory. In practice the rate limiter (8 token/min cap on auth endpoints) makes
+this expensive per-IP, but a distributed attacker could still do it. Production
+would add LRU bounding here too.
+
+Second, lockout can itself be weaponized as targeted DoS. An attacker who knows
+a username can deliberately fail five logins and lock that user out for 15
+minutes, repeatable indefinitely. The implementation uses straight
+username-based hard lockout — the simplest version of the pattern. Real systems
+usually combine multiple signals: username+IP keying, exponential backoff,
+CAPTCHA after N failures, or an email-verify recovery path. Each has its own
+tradeoff (e.g. IP-keying weakens the brute-force defense against IP-rotating
+attackers). The README already flags this tradeoff in "Tradeoffs to understand."
+
+Biggest takeaway tying today to the previous deep dives: rate limiting, cookies,
+and lockout don't defend the same things — they defend overlapping attacks at
+different layers. The rate limiter caps per-IP request volume. Lockout caps
+per-username failure volume. Cookie flags control what the browser will give up
+to script and where it'll attach credentials. Defense in depth: no one layer is
+sufficient against a determined attacker, but together they make the most common
+attacks too expensive to be worth it.
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.
