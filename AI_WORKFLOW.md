@@ -161,6 +161,51 @@ to script and where it'll attach credentials. Defense in depth: no one layer is
 sufficient against a determined attacker, but together they make the most common
 attacks too expensive to be worth it.
 
+### Day 4 — JWT internals
+Traced `JwtService` to understand what the token actually *is* and why the
+stateless model works the way it does.
+
+The signature mechanism. A JWT is three base64url segments —
+`header.payload.signature`. The signature is an HMAC-SHA-256 of the literal
+string `header.payload`, computed with the server's secret key
+(`Keys.hmacShaKeyFor(secret)` → `signWith(signingKey)`). On the way back in,
+`parseSignedClaims()` recomputes that HMAC over the received `header.payload`
+and compares it to the supplied signature. Because the secret never leaves the
+server, a client can read the payload but can't forge or tamper with it — any
+edit changes the hash and fails verification. Worth remembering: the payload is
+*signed, not encrypted*, so nothing secret should go in it (here it's just the
+username as `subject`).
+
+Stateless vs. sessions (the upside). Validity is derived purely from the
+signature + the `expiration` claim, so authenticating a request is a local
+crypto check — no per-request DB/session lookup. That also makes horizontal
+scaling trivial: any instance can verify any token with just the shared secret,
+so there's no sticky sessions or shared session store to stand up.
+
+The revocation tradeoff (the downside). The flip side of "no server state" is
+that there's nothing to delete to kill a token early. A signed, unexpired JWT
+stays valid until its `expiration` no matter what — logout on the client just
+drops the cookie, but the token itself would still verify if replayed. You
+can't revoke before expiry without reintroducing server state (a denylist /
+token-version check), which gives back the statelessness you bought.
+
+Mitigation pattern: keep access tokens short-lived and pair them with a
+longer-lived refresh token. A short TTL bounds the damage window of a leaked
+token; the refresh token (revocable, stored server-side) is exchanged for new
+access tokens, so you get most of the stateless benefit while keeping a
+revocation lever.
+
+This code's specific limitation: tokens are single-purpose access tokens with a
+30-minute TTL (`app.security.jwt.expiration-minutes`) and **no refresh
+mechanism**. So the practical behavior is: a token is irrevocable for up to 30
+minutes, and when it expires the user is simply forced to log in again (no
+silent refresh). Fine for a POC; a real deployment would add refresh-token
+rotation (already on the follow-ups list).
+
+Takeaway: the signature is the whole trust model — verifying it *is* the
+"session." Everything else about JWTs (the scaling win, the revocation pain) is
+a direct consequence of that one design choice.
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.
