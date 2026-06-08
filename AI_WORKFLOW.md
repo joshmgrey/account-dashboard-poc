@@ -1,4 +1,8 @@
-# AI-assisted development
+Day 5 entry in AI_WORKFLOW.md — capture today's security headers work. Same structure as the others. Don't make it long; the topic is straightforward. The interesting things to capture:
+Five headers, each defending a different attack class
+The X-Frame-Options + frame-ancestors overlap as deliberate defense in depth across browser support
+CSP as the actual XSS defense (the one you didn't have before HttpOnly + escaping)
+The CSP tradeoff (tight policy breaks third-party integrations; each loosening is a trust surface expansion)# AI-assisted development
 
 This project is being built with an AI-assisted workflow (Cursor). This file is
 a living log of how the AI was used, what was generated versus written by hand,
@@ -205,6 +209,38 @@ rotation (already on the follow-ups list).
 Takeaway: the signature is the whole trust model — verifying it *is* the
 "session." Everything else about JWTs (the scaling win, the revocation pain) is
 a direct consequence of that one design choice.
+
+### Day 5 — Security headers
+Reviewed the response headers set in `SecurityConfig`. Straightforward topic,
+but the point is that each one defends a *different* attack class:
+- **`Content-Security-Policy`** — restricts what the page can load/execute
+  (XSS, injection).
+- **`X-Frame-Options: DENY`** — blocks framing (clickjacking).
+- **`X-Content-Type-Options: nosniff`** — stops MIME sniffing (content-type
+  confusion attacks).
+- **`Referrer-Policy: no-referrer`** — prevents URL/data leakage via the
+  `Referer` header.
+- **HSTS** — forces HTTPS (transport downgrade / SSL stripping).
+
+Two things worth noting. First, `X-Frame-Options: DENY` and the CSP
+`frame-ancestors 'none'` directive overlap on purpose — they defend the same
+clickjacking attack, but CSP `frame-ancestors` is the modern mechanism while
+`X-Frame-Options` is the legacy header older browsers still rely on. Setting
+both is deliberate defense in depth across browser support.
+
+Second, CSP is the piece that finally gives a *real* XSS defense — the thing I
+didn't have on Day 2 when the takeaway was "`HttpOnly` limits the blast radius
+but doesn't stop the attack." Output encoding + React's escaping prevent most
+injection; CSP backstops it by refusing to execute injected/inline script even
+if something slips through. The current policy is tight (`default-src 'self'`,
+`object-src 'none'`, `base-uri 'self'`).
+
+The tradeoff: a tight CSP breaks third-party integrations (analytics, embedded
+widgets, CDN assets, inline styles/scripts). Every loosening — adding a host to
+a directive, allowing `'unsafe-inline'` — is an expansion of the trust surface,
+so the policy is only as strong as its most permissive directive. For this app,
+same-origin everything keeps it strict; that gets harder the moment real
+third-party scripts show up.
 
 ## Open questions / follow-ups
 
