@@ -28,7 +28,7 @@ enough to defend them. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for the workflow l
 - ✅ Authentication (JWT in httpOnly cookie, BCrypt, lockout)
 - ✅ Security hardening (rate limiting, headers, enumeration resistance)
 - ✅ Verification (`mvn test`, build, smoke tests, 429, lockout all confirmed)
-- ⏳ Account detail view
+- ✅ Account detail view + client-side routing (React Router)
 - ⏳ Future: real datastore, distributed rate limiting
 
 ## Project layout
@@ -94,6 +94,23 @@ Then open `http://localhost:5173` and sign in.
    server-side session store.
 4. The frontend never handles the raw token; it just calls the API with
    credentials and relies on the cookie.
+
+## Frontend routes
+
+The SPA uses React Router (`react-router-dom`). `<BrowserRouter>` wraps the app
+at the entry point (`main.tsx`); once authenticated, routes render inside a
+shared layout (header + sign out):
+
+| Route            | View            | Description                                   |
+| ---------------- | --------------- | --------------------------------------------- |
+| `/`              | `AccountsList`  | The signed-in user's accounts; each row links to its detail page |
+| `/accounts/:id`  | `AccountDetail` | A single account's details, with a link back to the list |
+| `*`              | —               | Redirects to `/`                              |
+
+Unauthenticated users see the login screen regardless of route. Deep links
+(e.g. refreshing on `/accounts/ACC-1001`) work because the Vite dev server and
+`vite preview` both fall back to `index.html`; a production host must do the
+same SPA fallback.
 
 ## Security hardening
 

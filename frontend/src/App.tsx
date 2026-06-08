@@ -1,5 +1,8 @@
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
-import Dashboard from './components/Dashboard'
+import AccountDetail from './components/AccountDetail'
+import AccountsList from './components/AccountsList'
+import AppLayout from './components/AppLayout'
 import LoginPage from './components/LoginPage'
 
 export default function App() {
@@ -13,5 +16,17 @@ export default function App() {
     )
   }
 
-  return user ? <Dashboard /> : <LoginPage />
+  if (!user) {
+    return <LoginPage />
+  }
+
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<AccountsList />} />
+        <Route path="accounts/:id" element={<AccountDetail />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  )
 }

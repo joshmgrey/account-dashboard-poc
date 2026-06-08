@@ -242,6 +242,28 @@ so the policy is only as strong as its most permissive directive. For this app,
 same-origin everything keeps it strict; that gets harder the moment real
 third-party scripts show up.
 
+### Day 6 — Client-side routing (feature build, not a deep dive)
+Logging this for completeness rather than as a study session — adding React
+Router was a routine feature, not a security topic. Cursor scaffolded it:
+installed `react-router-dom`, wrapped the entry point (`main.tsx`) in
+`<BrowserRouter>`, split the old single `Dashboard` into an `AppLayout` (shared
+header + `<Outlet/>`), an `AccountsList` at `/`, and an `AccountDetail` at
+`/accounts/:id`, with `<Link>`s between them and a `fetchAccount(id)` API call.
+
+Two things still worth noting:
+- **The auth gate stays outside the routes.** Unauthenticated users get the
+  login screen regardless of URL; `<Routes>` only mount once `user` is set. So
+  routing didn't introduce a new way to bypass auth — the gate is in `App`,
+  above the route tree.
+- **Deep links depend on SPA fallback.** Refreshing `/accounts/ACC-1001` only
+  works because the dev server / `vite preview` serve `index.html` for unknown
+  paths; a real host must replicate that. Noted in the README.
+
+No security-relevant surface changed: `/api/accounts/{id}` was already
+owner-scoped server-side, so hitting another user's ID still 404s regardless of
+what the client routes to. Honest takeaway: this was mostly plumbing, and the
+only thing worth a second look was confirming the auth boundary didn't move.
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.

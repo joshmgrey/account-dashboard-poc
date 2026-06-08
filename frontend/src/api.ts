@@ -54,3 +54,7 @@ export function fetchCurrentUser(): Promise<User> {
 export function fetchAccounts(): Promise<Account[]> {
   return request<Account[]>('/api/accounts')
 }
+
+export function fetchAccount(id: string): Promise<Account> {
+  return request<Account>(`/api/accounts/${encodeURIComponent(id)}`)
+}
