@@ -29,6 +29,10 @@ enough to defend them. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for the workflow l
 - ✅ Security hardening (rate limiting, headers, enumeration resistance)
 - ✅ Verification (`mvn test`, build, smoke tests, 429, lockout all confirmed)
 - ✅ Account detail view + client-side routing (React Router)
+- 🚧 Money transfers (`POST /api/accounts/{id}/transfers`): design
+  ([`TRANSFER_DESIGN.md`](TRANSFER_DESIGN.md)) and in-memory data layer
+  (`Transfer`/`Transaction`/`IdempotencyKey` records + stores) are done;
+  service, controller, and frontend are next
 - ⏳ Future: real datastore, distributed rate limiting
 
 ## Project layout
