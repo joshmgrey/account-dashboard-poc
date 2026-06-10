@@ -264,6 +264,12 @@ owner-scoped server-side, so hitting another user's ID still 404s regardless of
 what the client routes to. Honest takeaway: this was mostly plumbing, and the
 only thing worth a second look was confirming the auth boundary didn't move.
 
+### Day 7 — Transfer endpoint: design first
+
+Took a design-first approach to the transfer endpoint before writing any code. The spec lives in `TRANSFER_DESIGN.md` and covers six concerns: authorization, input validation, atomicity, idempotency, audit logging, and concurrency. Designed for a production JPA-backed implementation, with a separate POC vs. Production Implementation section calling out what changes when running on in-memory storage instead of a database — manual rollback compensation in place of `@Transactional`, lock ordering to prevent deadlocks (since in-memory mutexes don't have detection), naive lazy expiry on the idempotency store, and an audit log that's lost on restart. The exercise of writing the design before the code is the kind of discipline I want to keep building — the doc shapes the implementation rather than the other way around.
+
+Implementation starts tomorrow with Phase 1 (entities and in-memory stores).
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.
