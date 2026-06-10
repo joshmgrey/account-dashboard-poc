@@ -32,7 +32,8 @@ enough to defend them. See [`AI_WORKFLOW.md`](AI_WORKFLOW.md) for the workflow l
 - 🚧 Money transfers (`POST /api/accounts/{id}/transfers`): design
   ([`TRANSFER_DESIGN.md`](TRANSFER_DESIGN.md)) and in-memory data layer
   (`Transfer`/`Transaction`/`IdempotencyKey` records + stores) are done;
-  service, controller, and frontend are next
+  account storage moved into a mutable `AccountStore` so transfers can
+  update balances; service, controller, and frontend are next
 - ⏳ Future: real datastore, distributed rate limiting
 
 ## Project layout

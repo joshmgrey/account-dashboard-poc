@@ -16,4 +16,7 @@ public record Account(
         BigDecimal balance,
         String status
 ) {
+    public Account withBalance(BigDecimal newBalance) {
+        return new Account(id, owner, name, type, currency, newBalance, status);
+    }
 }

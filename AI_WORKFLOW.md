@@ -1,8 +1,4 @@
-Day 5 entry in AI_WORKFLOW.md — capture today's security headers work. Same structure as the others. Don't make it long; the topic is straightforward. The interesting things to capture:
-Five headers, each defending a different attack class
-The X-Frame-Options + frame-ancestors overlap as deliberate defense in depth across browser support
-CSP as the actual XSS defense (the one you didn't have before HttpOnly + escaping)
-The CSP tradeoff (tight policy breaks third-party integrations; each loosening is a trust surface expansion)# AI-assisted development
+# AI-assisted development
 
 This project is being built with an AI-assisted workflow (Cursor). This file is
 a living log of how the AI was used, what was generated versus written by hand,
@@ -269,6 +265,44 @@ only thing worth a second look was confirming the auth boundary didn't move.
 Took a design-first approach to the transfer endpoint before writing any code. The spec lives in `TRANSFER_DESIGN.md` and covers six concerns: authorization, input validation, atomicity, idempotency, audit logging, and concurrency. Designed for a production JPA-backed implementation, with a separate POC vs. Production Implementation section calling out what changes when running on in-memory storage instead of a database — manual rollback compensation in place of `@Transactional`, lock ordering to prevent deadlocks (since in-memory mutexes don't have detection), naive lazy expiry on the idempotency store, and an audit log that's lost on restart. The exercise of writing the design before the code is the kind of discipline I want to keep building — the doc shapes the implementation rather than the other way around.
 
 Implementation starts tomorrow with Phase 1 (entities and in-memory stores).
+
+### Day 8 — Transfer data layer (Phase 1)
+
+Built the data layer from the Day 7 design: three records (`Transfer`,
+`Transaction`, `IdempotencyKey`) and three `ConcurrentHashMap`-backed stores
+(`TransferStore`, `TransactionStore`, `IdempotencyKeyStore`), plus the
+account-side prep the transfer service will need. PR #1 has the first slice.
+
+Decisions and details worth remembering:
+
+- **Enum placement:** `Status`, `Type`, and `Reason` are nested inside the
+  records that own them rather than top-level files — none of them mean
+  anything apart from their owner, and the package is already 8+ files.
+  Promoting one later is a mechanical refactor, so no need to pre-pay.
+- **`ConcurrentHashMap` vs. `UserStore`'s `LinkedHashMap`:** the existing
+  stores are read-only after construction, so a plain map is fine there.
+  The transfer stores are written on every request, concurrently — hence
+  `ConcurrentHashMap`. One consequence: no insertion order, so `findAll`
+  sorts by ID to keep the dashboard's account ordering stable.
+- **Lazy idempotency expiry:** `IdempotencyKeyStore.find` evicts expired
+  entries on read using the two-arg `remove(key, record)`, so an expiry
+  check that saw a stale record can't delete a fresh one a concurrent
+  `save` just wrote. Also noted: `find`-then-`save` isn't atomic — the
+  real duplicate protection has to live in the service's locked section,
+  not the store.
+- **Account storage refactor:** balances were trapped in an immutable
+  `List.of(...)` inside `AccountService`. Moved storage to a mutable
+  `AccountStore` and reduced the service to the owner-scoping layer (the
+  IDOR filter stays there). Added `Account.withBalance(...)` since records
+  are immutable — debit/credit will be copy-and-save, same as transfer
+  status changes (`PENDING` → `COMPLETED` is a new `Transfer` overwriting
+  the old one by ID).
+
+Honest takeaway: no security surface changed today — this was structural
+prep. The interesting concurrency work (lock ordering, validation,
+rollback compensation) is next, and the data layer was shaped specifically
+to make that part testable (`TransactionStore.findByTransferId` exists so
+a test can assert every transfer wrote exactly one debit + one credit).
 
 ## Open questions / follow-ups
 
