@@ -1,6 +1,6 @@
 # AI-assisted development
 
-This project is being built with an AI-assisted workflow (Cursor). This file is
+This project is being built with an AI-assisted workflow (Cursor and Claude Code). This file is
 a living log of how the AI was used, what was generated versus written by hand,
 and — most importantly — the patterns I'm studying to make sure I understand the
 rationale and tradeoffs rather than just accepting the code.
