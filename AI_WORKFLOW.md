@@ -304,6 +304,65 @@ rollback compensation) is next, and the data layer was shaped specifically
 to make that part testable (`TransactionStore.findByTransferId` exists so
 a test can assert every transfer wrote exactly one debit + one credit).
 
+### Day 9 — Transfer service: validation, concurrency, atomicity, idempotency (Phase 2)
+
+Built `TransferService` incrementally — one concern per slice — so each layer
+could be reasoned about on its own before stacking the next. Also added the
+`TransferRequest` record (just `destination` + `amount`; the source account
+comes from the path and the user from the authenticated principal, never the
+body) and three `RuntimeException`s mapped to HTTP status codes:
+`AccountNotFoundException` (404), `IdempotencyConflictException` (409),
+`TransferValidationException` (422).
+
+The build order, and what each phase taught me:
+
+- **Validation first (2A).** Ten checks in a deliberate order: existence/ownership
+  failures throw `AccountNotFoundException`, everything else (currency match,
+  amount > 0, amount ≤ 25000, both accounts active, ≤ 2 decimal places, source ≠
+  destination, sufficient balance) throws `TransferValidationException`. Ordering
+  matters: ownership is checked via the same owner-scoped filter as the dashboard,
+  so probing for a foreign source ID 404s exactly like `GET /api/accounts/{id}` —
+  no IDOR signal leaks.
+- **Lock ordering (2B).** Per-account mutexes from a `ConcurrentHashMap`
+  (`computeIfAbsent(id, k -> new Object())`), acquired smaller-ID-first via nested
+  `synchronized` blocks. This is the deadlock-avoidance from the design doc made
+  concrete: without a consistent global order, an X→Y transfer and a concurrent
+  Y→X transfer can each hold one lock and wait on the other. Inside the locks I
+  re-read both accounts and re-check the balance — the validation snapshot from
+  2A is stale the moment another transfer commits, so the authoritative check has
+  to happen under the lock.
+- **Ledger writes + transfer record (2C).** A single `Instant now` is reused for
+  the transfer's `createdAt` and both transaction rows so the three records share
+  one timestamp. Each transfer writes exactly one `DEBIT`/`TRANSFER_OUT` and one
+  `CREDIT`/`TRANSFER_IN`, both linked by `relatedTransferId`.
+- **Rollback compensation (2D).** This is the part the design doc flagged as the
+  cost of not having `@Transactional` on an in-memory store: there's no automatic
+  rollback, so I have to undo by hand. `boolean` flags track which balance saves
+  actually landed; a single `catch (Exception e)` restores only the balances whose
+  flag is set, then `throw e` to preserve the exception *type* (the controller's
+  handler maps type → status). The honest limitation, left as a comment: the
+  ledger/transfer writes are append-only and are **not** undone — production would
+  mark the transfer `FAILED` or write reversing entries.
+- **Idempotency (2E).** SHA-256 over `destination:amount.toPlainString()` becomes
+  the request hash. Lookup is the very first operation: a known key with a
+  matching hash replays by re-fetching the transfer (Option C — `responseBody`
+  stays null), a known key with a *different* hash is the 409 conflict. The record
+  is saved after the locks release with a 24h retention `expiresAt`.
+
+Biggest takeaway: writing it phase-by-phase made the concurrency reasoning
+tractable. The re-read-under-lock (2B) and the manual rollback (2D) are both
+direct consequences of the same root fact — an in-memory map gives you neither
+snapshot isolation nor automatic rollback, so every guarantee a database would
+hand you for free has to be reconstructed by hand. That's exactly the gap the
+design doc's "POC vs. Production" section predicted, and feeling it in the code is
+more convincing than reading it.
+
+Known gap to revisit: the `find`-then-`save` on the idempotency store still isn't
+atomic across the whole method (the save happens after the locks release), so two
+truly simultaneous first-time requests with the same key could both proceed. The
+design doc's answer is wrapping the idempotency insert in the same transaction as
+the transfer; that lands when this moves to a real datastore.
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.
