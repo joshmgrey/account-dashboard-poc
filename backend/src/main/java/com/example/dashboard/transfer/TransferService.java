@@ -1,8 +1,13 @@
 package com.example.dashboard.transfer;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,6 +25,7 @@ import com.example.dashboard.account.AccountStore;
 public class TransferService {
 
     private static final BigDecimal MAX_TRANSFER_AMOUNT = new BigDecimal("25000");
+    private static final Duration IDEMPOTENCY_RETENTION = Duration.ofHours(24);
 
     private final Map<String, Object> accountLocks = new ConcurrentHashMap<>();
 
@@ -42,6 +48,17 @@ public class TransferService {
                                    String sourceAccountId,
                                    String idempotencyKey,
                                    TransferRequest request) {
+        String requestHash = hashRequest(request);
+        Optional<IdempotencyKey> existingKey = idempotencyKeyStore.find(idempotencyKey);
+        if (existingKey.isPresent()) {
+            if (!existingKey.get().requestHash().equals(requestHash)) {
+                throw new IdempotencyConflictException("Idempotency key already used with a different request");
+            }
+            return transferStore.findByIdempotencyKey(idempotencyKey)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Idempotency record exists but its transfer is missing"));
+        }
+
         Account source = accountStore.findById(sourceAccountId)
                 .filter(account -> account.owner().equals(authenticatedUsername))
                 .orElseThrow(() -> new AccountNotFoundException("Source account not found"));
@@ -144,6 +161,29 @@ public class TransferService {
                 }
             }
         }
+
+        Instant savedAt = Instant.now();
+        idempotencyKeyStore.save(new IdempotencyKey(
+                idempotencyKey,
+                requestHash,
+                null,
+                savedAt,
+                savedAt.plus(IDEMPOTENCY_RETENTION)));
         return transfer;
+    }
+
+    private String hashRequest(TransferRequest request) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String payload = request.destination() + ":" + request.amount().toPlainString();
+            byte[] hash = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
     }
 }
