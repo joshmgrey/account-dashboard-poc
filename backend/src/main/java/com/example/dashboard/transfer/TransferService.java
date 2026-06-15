@@ -93,37 +93,55 @@ public class TransferService {
                     throw new TransferValidationException("Insufficient balance");
                 }
 
-                accountStore.save(lockedSource.withBalance(lockedSource.balance().subtract(request.amount())));
-                accountStore.save(lockedDestination.withBalance(lockedDestination.balance().add(request.amount())));
+                boolean sourceUpdated = false;
+                boolean destinationUpdated = false;
+                try {
+                    accountStore.save(lockedSource.withBalance(lockedSource.balance().subtract(request.amount())));
+                    sourceUpdated = true;
+                    accountStore.save(lockedDestination.withBalance(lockedDestination.balance().add(request.amount())));
+                    destinationUpdated = true;
 
-                Instant now = Instant.now();
-                transfer = new Transfer(
-                        UUID.randomUUID().toString(),
-                        lockedSource.id(),
-                        lockedDestination.id(),
-                        request.amount(),
-                        lockedSource.currency(),
-                        Transfer.Status.COMPLETED,
-                        now,
-                        idempotencyKey);
-                transferStore.save(transfer);
+                    Instant now = Instant.now();
+                    transfer = new Transfer(
+                            UUID.randomUUID().toString(),
+                            lockedSource.id(),
+                            lockedDestination.id(),
+                            request.amount(),
+                            lockedSource.currency(),
+                            Transfer.Status.COMPLETED,
+                            now,
+                            idempotencyKey);
+                    transferStore.save(transfer);
 
-                transactionStore.save(new Transaction(
-                        UUID.randomUUID().toString(),
-                        lockedSource.id(),
-                        Transaction.Type.DEBIT,
-                        request.amount(),
-                        Transaction.Reason.TRANSFER_OUT,
-                        transfer.id(),
-                        now));
-                transactionStore.save(new Transaction(
-                        UUID.randomUUID().toString(),
-                        lockedDestination.id(),
-                        Transaction.Type.CREDIT,
-                        request.amount(),
-                        Transaction.Reason.TRANSFER_IN,
-                        transfer.id(),
-                        now));
+                    transactionStore.save(new Transaction(
+                            UUID.randomUUID().toString(),
+                            lockedSource.id(),
+                            Transaction.Type.DEBIT,
+                            request.amount(),
+                            Transaction.Reason.TRANSFER_OUT,
+                            transfer.id(),
+                            now));
+                    transactionStore.save(new Transaction(
+                            UUID.randomUUID().toString(),
+                            lockedDestination.id(),
+                            Transaction.Type.CREDIT,
+                            request.amount(),
+                            Transaction.Reason.TRANSFER_IN,
+                            transfer.id(),
+                            now));
+                } catch (Exception e) {
+                    // Compensating rollback restores only the account balances. Transfer
+                    // and Transaction writes are append-only in this POC and are not undone;
+                    // a production system would mark the transfer FAILED and/or write
+                    // reversing ledger entries instead.
+                    if (destinationUpdated) {
+                        accountStore.save(lockedDestination);
+                    }
+                    if (sourceUpdated) {
+                        accountStore.save(lockedSource);
+                    }
+                    throw e;
+                }
             }
         }
         return transfer;
