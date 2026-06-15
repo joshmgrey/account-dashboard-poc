@@ -1,6 +1,8 @@
 package com.example.dashboard.transfer;
 
 import java.math.BigDecimal;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
@@ -16,6 +18,8 @@ import com.example.dashboard.account.AccountStore;
 public class TransferService {
 
     private static final BigDecimal MAX_TRANSFER_AMOUNT = new BigDecimal("25000");
+
+    private final Map<String, Object> accountLocks = new ConcurrentHashMap<>();
 
     private final AccountStore accountStore;
     private final TransferStore transferStore;
@@ -68,6 +72,27 @@ public class TransferService {
         }
         if (source.balance().compareTo(request.amount()) < 0) {
             throw new TransferValidationException("Insufficient balance");
+        }
+
+        String firstId = source.id().compareTo(destination.id()) <= 0 ? source.id() : destination.id();
+        String secondId = firstId.equals(source.id()) ? destination.id() : source.id();
+        Object firstLock = accountLocks.computeIfAbsent(firstId, k -> new Object());
+        Object secondLock = accountLocks.computeIfAbsent(secondId, k -> new Object());
+
+        synchronized (firstLock) {
+            synchronized (secondLock) {
+                Account lockedSource = accountStore.findById(sourceAccountId)
+                        .orElseThrow(() -> new AccountNotFoundException("Source account not found"));
+                Account lockedDestination = accountStore.findById(request.destination())
+                        .orElseThrow(() -> new AccountNotFoundException("Destination account not found"));
+
+                if (lockedSource.balance().compareTo(request.amount()) < 0) {
+                    throw new TransferValidationException("Insufficient balance");
+                }
+
+                accountStore.save(lockedSource.withBalance(lockedSource.balance().subtract(request.amount())));
+                accountStore.save(lockedDestination.withBalance(lockedDestination.balance().add(request.amount())));
+            }
         }
     }
 }
