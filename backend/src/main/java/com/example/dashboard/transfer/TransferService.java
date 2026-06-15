@@ -1,7 +1,9 @@
 package com.example.dashboard.transfer;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
@@ -36,10 +38,10 @@ public class TransferService {
         this.idempotencyKeyStore = idempotencyKeyStore;
     }
 
-    public void createTransfer(String authenticatedUsername,
-                               String sourceAccountId,
-                               String idempotencyKey,
-                               TransferRequest request) {
+    public Transfer createTransfer(String authenticatedUsername,
+                                   String sourceAccountId,
+                                   String idempotencyKey,
+                                   TransferRequest request) {
         Account source = accountStore.findById(sourceAccountId)
                 .filter(account -> account.owner().equals(authenticatedUsername))
                 .orElseThrow(() -> new AccountNotFoundException("Source account not found"));
@@ -79,6 +81,7 @@ public class TransferService {
         Object firstLock = accountLocks.computeIfAbsent(firstId, k -> new Object());
         Object secondLock = accountLocks.computeIfAbsent(secondId, k -> new Object());
 
+        Transfer transfer;
         synchronized (firstLock) {
             synchronized (secondLock) {
                 Account lockedSource = accountStore.findById(sourceAccountId)
@@ -92,7 +95,37 @@ public class TransferService {
 
                 accountStore.save(lockedSource.withBalance(lockedSource.balance().subtract(request.amount())));
                 accountStore.save(lockedDestination.withBalance(lockedDestination.balance().add(request.amount())));
+
+                Instant now = Instant.now();
+                transfer = new Transfer(
+                        UUID.randomUUID().toString(),
+                        lockedSource.id(),
+                        lockedDestination.id(),
+                        request.amount(),
+                        lockedSource.currency(),
+                        Transfer.Status.COMPLETED,
+                        now,
+                        idempotencyKey);
+                transferStore.save(transfer);
+
+                transactionStore.save(new Transaction(
+                        UUID.randomUUID().toString(),
+                        lockedSource.id(),
+                        Transaction.Type.DEBIT,
+                        request.amount(),
+                        Transaction.Reason.TRANSFER_OUT,
+                        transfer.id(),
+                        now));
+                transactionStore.save(new Transaction(
+                        UUID.randomUUID().toString(),
+                        lockedDestination.id(),
+                        Transaction.Type.CREDIT,
+                        request.amount(),
+                        Transaction.Reason.TRANSFER_IN,
+                        transfer.id(),
+                        now));
             }
         }
+        return transfer;
     }
 }
