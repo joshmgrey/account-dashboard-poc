@@ -44,19 +44,20 @@ public class TransferService {
         this.idempotencyKeyStore = idempotencyKeyStore;
     }
 
-    public Transfer createTransfer(String authenticatedUsername,
-                                   String sourceAccountId,
-                                   String idempotencyKey,
-                                   TransferRequest request) {
+    public TransferResult createTransfer(String authenticatedUsername,
+                                         String sourceAccountId,
+                                         String idempotencyKey,
+                                         TransferRequest request) {
         String requestHash = hashRequest(request);
         Optional<IdempotencyKey> existingKey = idempotencyKeyStore.find(idempotencyKey);
         if (existingKey.isPresent()) {
             if (!existingKey.get().requestHash().equals(requestHash)) {
                 throw new IdempotencyConflictException("Idempotency key already used with a different request");
             }
-            return transferStore.findByIdempotencyKey(idempotencyKey)
+            Transfer existingTransfer = transferStore.findByIdempotencyKey(idempotencyKey)
                     .orElseThrow(() -> new IllegalStateException(
                             "Idempotency record exists but its transfer is missing"));
+            return new TransferResult(existingTransfer, true);
         }
 
         Account source = accountStore.findById(sourceAccountId)
@@ -169,7 +170,7 @@ public class TransferService {
                 null,
                 savedAt,
                 savedAt.plus(IDEMPOTENCY_RETENTION)));
-        return transfer;
+        return new TransferResult(transfer, false);
     }
 
     private String hashRequest(TransferRequest request) {
