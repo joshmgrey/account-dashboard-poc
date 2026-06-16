@@ -363,6 +363,75 @@ truly simultaneous first-time requests with the same key could both proceed. The
 design doc's answer is wrapping the idempotency insert in the same transaction as
 the transfer; that lands when this moves to a real datastore.
 
+### Day 10 — Transfer API layer + first slice of the UI (Phases 3 and 4a)
+
+Wired the Day 9 service to the outside world (Phase 3) and built the frontend up
+to a working "send a transfer" flow (Phase 4a). Two layers, but one theme: the
+service already enforces correctness, so everything today is about *shaping*
+input and output — DTOs, status-code mapping, and a UI that can't easily ask for
+something invalid.
+
+**Phase 3 — backend API.**
+
+- **Result vs. response split.** Introduced `TransferResult` (`Transfer` +
+  `isReplay`) as the service's return type, separate from `TransferResponse`
+  (`Transfer` + `message`) on the wire. The reason is that the 200-vs-201
+  decision is the *controller's* job, not the service's — the service just
+  reports whether it executed or replayed, and the controller maps replay → 200
+  "Transfer already processed" and new → 201 "Transfer created". Keeping the HTTP
+  vocabulary out of the service keeps it testable without a web context.
+- **Centralized error mapping.** `GlobalExceptionHandler` (`@ControllerAdvice`)
+  turns the three domain exceptions into `ErrorResponse` payloads with the right
+  codes (404/409/422) using each exception's own message, plus a catch-all
+  `Exception` → 500 with a *hardcoded* "An unexpected error occurred" and an
+  SLF4J `log.error` before responding. The split is deliberate: domain messages
+  are safe to show; anything unexpected gets logged server-side and sanitized on
+  the way out so internals never leak to the client.
+- **The directory endpoint and its privacy tradeoff.** The destination picker
+  needs to see accounts the user doesn't own, which breaks the owner-scoping rule
+  the whole `AccountService` was built around. Handled it by making that the one
+  explicit exception: `findDirectory()` returns a sanitized `AccountDirectoryEntry`
+  (`id`, `currency`, `owner` — no balance, no status) and filters to ACTIVE only,
+  with the class Javadoc updated to call out the carve-out. Honest tension noted
+  in the design doc already: exposing `owner` by account ID enables enumeration,
+  accepted for the POC.
+
+**Phase 4a — frontend.**
+
+- **Typed error surfacing.** Reworked `request<T>` so a non-OK response tries to
+  parse the JSON body and lift its `message` into `ApiError`, falling back to the
+  generic text. This is what makes the backend's `ErrorResponse` actually useful —
+  the transfer form now shows "Insufficient balance" or the 409 conflict message
+  verbatim instead of a generic "request failed." Narrowed the body as `unknown`
+  rather than casting so it stays honest under `tsc`.
+- **Feature-agnostic Modal.** Built a reusable `Modal` (escape-to-close,
+  click-outside-to-close, `role="dialog"`/`aria-modal`/`aria-labelledby`) with no
+  transfer knowledge in it. Noted limitations for later: no focus trap, no
+  body-scroll lock — fine for the POC, but the accessibility gaps are real.
+- **The form, and where the idempotency key comes from.** `TransferForm` pulls
+  the directory, filters out the source account client-side, and generates its
+  idempotency key with the browser-native `crypto.randomUUID()` held in a
+  `useMemo` so a retry of the same submission reuses one key (that's the whole
+  point — a double-click replays rather than double-sends). Sidesteps a dependency
+  too: tried `npm install uuid` and hit a corporate-TLS
+  `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, but the built-in needs no package at all.
+- **Wiring + a deliberate stub.** `AccountDetail` gets a Transfer button (only when
+  ACTIVE) that opens the modal; on success it closes and navigates to
+  `/transfers/:id`, which currently renders a `TransferDetail` placeholder. Added
+  the route before the catch-all (order matters in React Router). The stub exists
+  so the success path has a real destination now and the detail view can be built
+  next without rework.
+
+Biggest takeaway: the client-side guards (filtering the source out of the picker,
+disabling submit on empty fields, ACTIVE-only transfer button) are *UX*, not
+security. Every one of them is also enforced server-side in the Day 9 service,
+because the API is reachable without the form. The frontend's job is to make the
+valid path easy; the backend's job is to make the invalid path impossible. Today
+was a good reminder to keep those responsibilities from blurring.
+
+Next: build out `TransferDetail` for real (fetch + render the transfer), and the
+defense-in-depth check that the directory endpoint can't be hit anonymously.
+
 ## Open questions / follow-ups
 
 - Token revocation and refresh-token rotation.
