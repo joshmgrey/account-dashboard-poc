@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError, fetchAccount } from '../api'
+import Modal from '../components/Modal'
+import TransferForm from '../components/TransferForm'
 import type { Account } from '../types'
 
 function formatBalance(account: Account): string {
@@ -12,9 +14,11 @@ function formatBalance(account: Account): string {
 
 export default function AccountDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [account, setAccount] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isTransferOpen, setIsTransferOpen] = useState(false)
 
   useEffect(() => {
     if (!id) {
@@ -54,6 +58,15 @@ export default function AccountDetail() {
             <span className={`badge badge--${account.status.toLowerCase()}`}>
               {account.status}
             </span>
+            {account.status === 'ACTIVE' && (
+              <button
+                type="button"
+                className="detail__transfer"
+                onClick={() => setIsTransferOpen(true)}
+              >
+                Transfer
+              </button>
+            )}
           </div>
 
           <dl className="detail__grid">
@@ -75,6 +88,22 @@ export default function AccountDetail() {
             </div>
           </dl>
         </div>
+      )}
+
+      {account && (
+        <Modal
+          isOpen={isTransferOpen}
+          onClose={() => setIsTransferOpen(false)}
+          title={`Transfer from ${account.name}`}
+        >
+          <TransferForm
+            sourceAccountId={account.id}
+            onSuccess={(response) => {
+              setIsTransferOpen(false)
+              navigate(`/transfers/${response.transfer.id}`)
+            }}
+          />
+        </Modal>
       )}
     </section>
   )

@@ -24,6 +24,11 @@ public class AccountController {
         return accountService.findForOwner(authentication.getName());
     }
 
+    @GetMapping("/directory")
+    public List<AccountDirectoryEntry> getDirectory(Authentication authentication) {
+        return accountService.findDirectory();
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<AccountView> getAccount(Authentication authentication,
                                                   @PathVariable String id) {

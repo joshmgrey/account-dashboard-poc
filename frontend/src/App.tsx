@@ -4,6 +4,7 @@ import AccountDetail from './components/AccountDetail'
 import AccountsList from './components/AccountsList'
 import AppLayout from './components/AppLayout'
 import LoginPage from './components/LoginPage'
+import TransferDetail from './components/TransferDetail'
 
 export default function App() {
   const { user, initializing } = useAuth()
@@ -25,6 +26,7 @@ export default function App() {
       <Route element={<AppLayout />}>
         <Route index element={<AccountsList />} />
         <Route path="accounts/:id" element={<AccountDetail />} />
+        <Route path="transfers/:transferId" element={<TransferDetail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

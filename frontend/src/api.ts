@@ -1,4 +1,4 @@
-import type { Account, User } from './types'
+import type { Account, AccountDirectoryEntry, Transfer, User } from './types'
 
 /** Thrown for non-2xx responses, carrying the HTTP status for callers. */
 export class ApiError extends Error {
@@ -26,7 +26,21 @@ async function request<T>(input: string, init: RequestInit = {}): Promise<T> {
   })
 
   if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status})`)
+    let message = `Request failed (${response.status})`
+    try {
+      const body: unknown = await response.json()
+      if (
+        typeof body === 'object' &&
+        body !== null &&
+        'message' in body &&
+        typeof (body as { message: unknown }).message === 'string'
+      ) {
+        message = (body as { message: string }).message
+      }
+    } catch {
+      // Non-JSON or empty body; keep the generic message.
+    }
+    throw new ApiError(response.status, message)
   }
 
   if (response.status === 204) {
@@ -57,4 +71,36 @@ export function fetchAccounts(): Promise<Account[]> {
 
 export function fetchAccount(id: string): Promise<Account> {
   return request<Account>(`/api/accounts/${encodeURIComponent(id)}`)
+}
+
+export interface TransferRequest {
+  destination: string
+  amount: string
+}
+
+export interface TransferResponse {
+  transfer: Transfer
+  message: string
+}
+
+export function fetchAccountDirectory(): Promise<AccountDirectoryEntry[]> {
+  return request<AccountDirectoryEntry[]>('/api/accounts/directory')
+}
+
+export function createTransfer(
+  sourceAccountId: string,
+  idempotencyKey: string,
+  body: TransferRequest,
+): Promise<TransferResponse> {
+  return request<TransferResponse>(
+    `/api/accounts/${encodeURIComponent(sourceAccountId)}/transfers`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify(body),
+    },
+  )
 }
