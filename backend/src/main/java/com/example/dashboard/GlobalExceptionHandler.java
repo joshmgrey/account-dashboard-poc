@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 
 import com.example.dashboard.transfer.AccountNotFoundException;
 import com.example.dashboard.transfer.IdempotencyConflictException;
+import com.example.dashboard.transfer.TransferNotFoundException;
 import com.example.dashboard.transfer.TransferValidationException;
 
 /**
@@ -35,6 +36,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TransferValidationException.class)
     public ResponseEntity<ErrorResponse> handleTransferValidation(TransferValidationException e) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(new ErrorResponse(e.getMessage()));
+    }
+
+    @ExceptionHandler(TransferNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTransferNotFound(TransferNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(e.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

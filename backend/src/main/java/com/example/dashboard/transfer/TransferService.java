@@ -173,6 +173,44 @@ public class TransferService {
         return new TransferResult(transfer, false);
     }
 
+    /**
+     * Looks up a transfer by ID. Visibility is restricted to the owner of either
+     * the source or destination account; callers who own neither receive the same
+     * 404 response as for a non-existent transfer, preventing existence-leakage of
+     * other users' transfers. Returns an enriched {@link TransferDetailView} with
+     * account information resolved so the frontend needs no additional lookups.
+     */
+    public TransferDetailView findById(String authenticatedUsername, String transferId) {
+        Transfer transfer = transferStore.findById(transferId)
+                .orElseThrow(() -> new TransferNotFoundException("Transfer not found"));
+
+        Account source = accountStore.findById(transfer.sourceAccountId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Transfer references missing source account: " + transfer.sourceAccountId()));
+        Account destination = accountStore.findById(transfer.destinationAccountId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Transfer references missing destination account: " + transfer.destinationAccountId()));
+
+        boolean userOwnsSource = source.owner().equals(authenticatedUsername);
+        boolean userOwnsDestination = destination.owner().equals(authenticatedUsername);
+
+        if (!userOwnsSource && !userOwnsDestination) {
+            // Same response as 'not found' — don't leak existence of others' transfers
+            throw new TransferNotFoundException("Transfer not found");
+        }
+
+        return new TransferDetailView(
+                transfer.id(),
+                transfer.amount(),
+                transfer.currency(),
+                transfer.status(),
+                transfer.createdAt(),
+                new TransferDetailView.AccountRef(source.id(), source.owner(), source.currency()),
+                new TransferDetailView.AccountRef(destination.id(), destination.owner(), destination.currency()),
+                transfer.idempotencyKey()
+        );
+    }
+
     private String hashRequest(TransferRequest request) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
