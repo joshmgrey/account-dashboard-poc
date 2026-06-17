@@ -1,33 +1,20 @@
 # AI-assisted development
 
-This project is being built with an AI-assisted workflow (Cursor and Claude Code). This file is
-a living log of how the AI was used, what was generated versus written by hand,
-and — most importantly — the patterns I'm studying to make sure I understand the
-rationale and tradeoffs rather than just accepting the code.
+This project is being built with an AI-assisted workflow (Cursor and Claude Code). This file is a living log of how the AI was used, what was generated versus written by hand, and — most importantly — the patterns I'm studying to make sure I understand the rationale and tradeoffs rather than just accepting the code.
 
-> The goal isn't to hide that AI was involved; it's to be deliberate about it.
-> Anything scaffolded by the AI gets reviewed, and the non-obvious parts get
-> studied and documented here.
+> The goal isn't to hide that AI was involved; it's to be deliberate about it.  Anything scaffolded by the AI gets reviewed, and the non-obvious parts get studied and documented here.
 
 ## How I'm using the AI
 
-- **Scaffolding:** generating the initial project skeleton (Spring Boot +
-  Vite/React) and boilerplate-heavy files (config classes, DTOs, filter
-  wiring).
-- **Security baseline:** drafting the first pass of auth, rate limiting, and
-  hardening so there's a concrete, reviewable starting point.
-- **Review prompts:** asking the AI to explain *why* a pattern is used and what
-  the alternatives/tradeoffs are, then verifying those claims independently.
+- **Scaffolding:** generating the initial project skeleton (Spring Boot + Vite/React) and boilerplate-heavy files (config classes, DTOs, filter wiring).
+- **Security baseline:** drafting the first pass of auth, rate limiting, and hardening so there's a concrete, reviewable starting point.
+- **Review prompts:** asking the AI to explain *why* a pattern is used and what the alternatives/tradeoffs are, then verifying those claims independently.
 
-What I'm **not** doing: merging code I don't understand, or treating generated
-security code as correct by default. Security-relevant code in particular gets
-a closer read and is verified against primary sources (Spring Security docs,
-OWASP).
+What I'm **not** doing: merging code I don't understand, or treating generated security code as correct by default. Security-relevant code in particular gets a closer read and is verified against primary sources (Spring Security docs, OWASP).
 
 ## Verification checklist
 
-The generation environment couldn't run builds, so these were confirmed locally
-afterward (see the README "Running" section). All passing as of Day 1:
+The generation environment couldn't run builds, so these were confirmed locally afterward (see the README "Running" section). All passing as of Day 1:
 
 - [x] `mvn test` passes (backend compiles, auth tests green)
 - [x] `npm install && npm run build` passes (frontend typechecks/builds)
@@ -37,228 +24,101 @@ afterward (see the README "Running" section). All passing as of Day 1:
 
 ## Patterns I'm studying
 
-Notes-to-self on the non-obvious decisions in this codebase. Updated as I work
-through each one.
+Notes-to-self on the non-obvious decisions in this codebase. Updated as I work through each one.
 
 ### Auth: JWT in an httpOnly cookie vs. bearer token in localStorage
-- **What was chosen:** stateless HS256 JWT delivered in an `httpOnly`,
-  `SameSite=Strict` cookie.
-- **Why:** `httpOnly` keeps the token unreadable from JS, so an XSS bug can't
-  exfiltrate it. `SameSite=Strict` means the browser won't attach the cookie to
-  cross-site requests, which is what mitigates CSRF here.
-- **Tradeoffs to understand:** cookies are sent automatically (the reason CSRF
-  is even a concern); `SameSite=Strict` can break some cross-site navigation
-  flows; stateless JWTs can't be revoked before expiry without extra
-  machinery (a denylist or short TTL + refresh tokens).
+- **What was chosen:** stateless HS256 JWT delivered in an `httpOnly`, `SameSite=Strict` cookie.
+- **Why:** `httpOnly` keeps the token unreadable from JS, so an XSS bug can't exfiltrate it. `SameSite=Strict` means the browser won't attach the cookie to cross-site requests, which is what mitigates CSRF here.
+- **Tradeoffs to understand:** cookies are sent automatically (the reason CSRF is even a concern); `SameSite=Strict` can break some cross-site navigation flows; stateless JWTs can't be revoked before expiry without extra machinery (a denylist or short TTL + refresh tokens).
 - **Status:** studying token revocation / refresh-token rotation as a follow-up.
 
 ### CSRF protection disabled
 - **What was chosen:** Spring Security CSRF is turned off.
-- **Why it's claimed to be safe:** the auth cookie is `SameSite=Strict`, so it
-  isn't sent on cross-site requests, removing the classic CSRF vector; the API
-  is also stateless with no session cookie.
-- **What I need to confirm:** that `SameSite=Strict` is sufficient for this
-  app's flows, and whether I'd want defense-in-depth (e.g. a custom header
-  check) anyway. This is the decision I most want to pressure-test.
+- **Why it's claimed to be safe:** the auth cookie is `SameSite=Strict`, so it isn't sent on cross-site requests, removing the classic CSRF vector; the API is also stateless with no session cookie.
+- **What I need to confirm:** that `SameSite=Strict` is sufficient for this app's flows, and whether I'd want defense-in-depth (e.g. a custom header check) anyway. This is the decision I most want to pressure-test.
 
 ### Rate limiting (token bucket) for DoS defense
-- **What was chosen:** in-memory per-IP token-bucket filter, stricter budget on
-  `/api/auth/*`, with the limiter's own maps bounded to avoid becoming a
-  memory-exhaustion vector.
-- **Tradeoffs to understand:** in-memory state doesn't work across multiple
-  instances (would need Redis/a shared store); `getRemoteAddr()` is correct
-  only when not behind a proxy (otherwise need a trusted forwarded header);
-  per-IP limiting is coarse (NAT, shared IPs).
+- **What was chosen:** in-memory per-IP token-bucket filter, stricter budget on `/api/auth/*`, with the limiter's own maps bounded to avoid becoming a memory-exhaustion vector.
+- **Tradeoffs to understand:** in-memory state doesn't work across multiple instances (would need Redis/a shared store); `getRemoteAddr()` is correct only when not behind a proxy (otherwise need a trusted forwarded header); per-IP limiting is coarse (NAT, shared IPs).
 
 ### Brute-force lockout + user-enumeration resistance
-- **What was chosen:** lock an account after N failures; return a generic error
-  and run a dummy BCrypt comparison for unknown users.
-- **Why:** generic errors + constant-ish timing avoid leaking which usernames
-  exist; lockout slows credential stuffing.
-- **Tradeoffs to understand:** account lockout can itself be abused for
-  denial-of-service against a specific user; alternatives like exponential
-  backoff or CAPTCHA exist.
+- **What was chosen:** lock an account after N failures; return a generic error and run a dummy BCrypt comparison for unknown users.
+- **Why:** generic errors + constant-ish timing avoid leaking which usernames exist; lockout slows credential stuffing.
+- **Tradeoffs to understand:** account lockout can itself be abused for denial-of-service against a specific user; alternatives like exponential backoff or CAPTCHA exist.
 
 ### BCrypt password hashing
 - **What was chosen:** Spring Security's `BCryptPasswordEncoder`.
-- **What I'm reviewing:** work factor (cost) selection and how it should scale
-  with hardware; how this would migrate to argon2 if needed.
+- **What I'm reviewing:** work factor (cost) selection and how it should scale with hardware; how this would migrate to argon2 if needed.
 
 ### Security headers (CSP, HSTS, frame options, etc.)
-- **What was chosen:** `Content-Security-Policy`, `X-Frame-Options: DENY`,
-  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, HSTS.
-- **What I'm reviewing:** whether the CSP is tight enough for the real
-  frontend (it currently assumes same-origin assets), and HSTS implications
-  (only meaningful over HTTPS; preload list considerations).
+- **What was chosen:** `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, HSTS.
+- **What I'm reviewing:** whether the CSP is tight enough for the real frontend (it currently assumes same-origin assets), and HSTS implications (only meaningful over HTTPS; preload list considerations).
 
 ## Learning log
 
 ### Day 1 — Rate limiting deep dive
-Cursor scaffolded a token-bucket rate limiter with separate buckets for general
-traffic and auth endpoints, plus LRU-style eviction at 50k keys. Spent an
-afternoon tracing the code to understand the mechanism: the refill formula
-(tokens accrue continuously at `refillPerMinute / 60_000` per millisecond), the
-capacity cap (`Math.min(capacity, ...)` so the bucket never over-fills), the
-`ConcurrentHashMap` + `computeIfAbsent` for thread-safe per-key buckets with
-synchronized consume, and the eviction policy.
+Cursor scaffolded a token-bucket rate limiter with separate buckets for general traffic and auth endpoints, plus LRU-style eviction at 50k keys. Spent an afternoon tracing the code to understand the mechanism: the refill formula (tokens accrue continuously at `refillPerMinute / 60_000` per millisecond), the capacity cap (`Math.min(capacity, ...)` so the bucket never over-fills), the `ConcurrentHashMap` + `computeIfAbsent` for thread-safe per-key buckets with synchronized consume, and the eviction policy.
 
-One limitation I noticed: eviction is an O(n) scan for the oldest-seen entry,
-which is fine for a POC but a production system should use something like
-Caffeine's O(1) LRU (and likely a shared store like Redis for multi-instance).
+One limitation I noticed: eviction is an O(n) scan for the oldest-seen entry, which is fine for a POC but a production system should use something like Caffeine's O(1) LRU (and likely a shared store like Redis for multi-instance).
 
-Biggest takeaway: the exercise of explaining each piece in plain English without
-notes surfaced gaps that surface-level reading had glossed over.
+Biggest takeaway: the exercise of explaining each piece in plain English without notes surfaced gaps that surface-level reading had glossed over.
 
 ### Day 2 — Cookie security, XSS, CSRF
-Traced the login cookie flow: `AuthController.login()` issues a JWT, then
-`AuthCookieService.buildAccessTokenCookie()` wraps it in a `ResponseCookie` with
-`httpOnly` hardcoded `true`, `path='/'` hardcoded, and `secure`/`sameSite`
-config-driven via `cookieProps`. Noticed that login and logout share the same
-`baseCookie()` builder — important because browsers won't delete a cookie unless
-the replacement's attributes (name, path, domain) match.
+Traced the login cookie flow: `AuthController.login()` issues a JWT, then `AuthCookieService.buildAccessTokenCookie()` wraps it in a `ResponseCookie` with `httpOnly` hardcoded `true`, `path='/'` hardcoded, and `secure`/`sameSite` config-driven via `cookieProps`. Noticed that login and logout share the same `baseCookie()` builder — important because browsers won't delete a cookie unless the replacement's attributes (name, path, domain) match.
 
-Studied XSS and CSRF attack mechanics and the specific defense each cookie flag
-provides. Key nuance: `HttpOnly` stops cookie *exfiltration*, not the XSS attack
-itself — the real XSS defense is preventing script execution in the first place
-via output encoding, framework defaults, and CSP. `SameSite` and `Secure` are
-about CSRF and transport, not XSS.
+Studied XSS and CSRF attack mechanics and the specific defense each cookie flag provides. Key nuance: `HttpOnly` stops cookie *exfiltration*, not the XSS attack itself — the real XSS defense is preventing script execution in the first place via output encoding, framework defaults, and CSP. `SameSite` and `Secure` are about CSRF and transport, not XSS.
 
 ### Day 3 — Login lockout
-Traced `LoginAttemptService` to understand how repeated failed logins are
-handled. Per-username failure tracking lives in a
-`ConcurrentHashMap<String, Attempts>`, where `Attempts` is an immutable record
-bundling the failure count and an optional lock expiry. The record exists for
-atomicity — bundling the two fields into one immutable value lets `compute()`
+Traced `LoginAttemptService` to understand how repeated failed logins are handled. Per-username failure tracking lives in a `ConcurrentHashMap<String, Attempts>`, where `Attempts` is an immutable record bundling the failure count and an optional lock expiry. The record exists for atomicity — bundling the two fields into one immutable value lets `compute()`
 update both atomically per key. Two separate maps would race.
 
-After 5 failures the account locks for 15 minutes. Both are configurable via
-`AppProperties.Login`. Unlock is lazy — there's no background sweeper. The
-expiry just gets checked on the next login attempt for that user, and the entry
-is removed at that point.
+After 5 failures the account locks for 15 minutes. Both are configurable via `AppProperties.Login`. Unlock is lazy — there's no background sweeper. The expiry just gets checked on the next login attempt for that user, and the entry is removed at that point.
 
 Two limitations worth knowing.
 
-First, the map isn't bounded. Unlike the rate limiter, there's no LRU eviction
-or size cap. An attacker could spoof many usernames to grow the map and exhaust
-memory. In practice the rate limiter (8 token/min cap on auth endpoints) makes
-this expensive per-IP, but a distributed attacker could still do it. Production
-would add LRU bounding here too.
+First, the map isn't bounded. Unlike the rate limiter, there's no LRU eviction or size cap. An attacker could spoof many usernames to grow the map and exhaust memory. In practice the rate limiter (8 token/min cap on auth endpoints) makes this expensive per-IP, but a distributed attacker could still do it. Production would add LRU bounding here too.
 
-Second, lockout can itself be weaponized as targeted DoS. An attacker who knows
-a username can deliberately fail five logins and lock that user out for 15
-minutes, repeatable indefinitely. The implementation uses straight
-username-based hard lockout — the simplest version of the pattern. Real systems
-usually combine multiple signals: username+IP keying, exponential backoff,
-CAPTCHA after N failures, or an email-verify recovery path. Each has its own
-tradeoff (e.g. IP-keying weakens the brute-force defense against IP-rotating
-attackers). The README already flags this tradeoff in "Tradeoffs to understand."
+Second, lockout can itself be weaponized as targeted DoS. An attacker who knows a username can deliberately fail five logins and lock that user out for 15 minutes, repeatable indefinitely. The implementation uses straight username-based hard lockout — the simplest version of the pattern. Real systems usually combine multiple signals: username+IP keying, exponential backoff, CAPTCHA after N failures, or an email-verify recovery path. Each has its own tradeoff (e.g. IP-keying weakens the brute-force defense against IP-rotating attackers). The README already flags this tradeoff in "Tradeoffs to understand."
 
-Biggest takeaway tying today to the previous deep dives: rate limiting, cookies,
-and lockout don't defend the same things — they defend overlapping attacks at
-different layers. The rate limiter caps per-IP request volume. Lockout caps
-per-username failure volume. Cookie flags control what the browser will give up
-to script and where it'll attach credentials. Defense in depth: no one layer is
-sufficient against a determined attacker, but together they make the most common
-attacks too expensive to be worth it.
+Biggest takeaway tying today to the previous deep dives: rate limiting, cookies, and lockout don't defend the same things — they defend overlapping attacks at different layers. The rate limiter caps per-IP request volume. Lockout caps per-username failure volume. Cookie flags control what the browser will give up to script and where it'll attach credentials. Defense in depth: no one layer is sufficient against a determined attacker, but together they make the most common attacks too expensive to be worth it.
 
 ### Day 4 — JWT internals
-Traced `JwtService` to understand what the token actually *is* and why the
-stateless model works the way it does.
+Traced `JwtService` to understand what the token actually *is* and why the stateless model works the way it does.
 
-The signature mechanism. A JWT is three base64url segments —
-`header.payload.signature`. The signature is an HMAC-SHA-256 of the literal
-string `header.payload`, computed with the server's secret key
-(`Keys.hmacShaKeyFor(secret)` → `signWith(signingKey)`). On the way back in,
-`parseSignedClaims()` recomputes that HMAC over the received `header.payload`
-and compares it to the supplied signature. Because the secret never leaves the
-server, a client can read the payload but can't forge or tamper with it — any
-edit changes the hash and fails verification. Worth remembering: the payload is
-*signed, not encrypted*, so nothing secret should go in it (here it's just the
-username as `subject`).
+The signature mechanism. A JWT is three base64url segments — `header.payload.signature`. The signature is an HMAC-SHA-256 of the literal string `header.payload`, computed with the server's secret key (`Keys.hmacShaKeyFor(secret)` → `signWith(signingKey)`). On the way back in, `parseSignedClaims()` recomputes that HMAC over the received `header.payload` and compares it to the supplied signature. Because the secret never leaves the server, a client can read the payload but can't forge or tamper with it — any edit changes the hash and fails verification. Worth remembering: the payload is *signed, not encrypted*, so nothing secret should go in it (here it's just the username as `subject`).
 
-Stateless vs. sessions (the upside). Validity is derived purely from the
-signature + the `expiration` claim, so authenticating a request is a local
-crypto check — no per-request DB/session lookup. That also makes horizontal
-scaling trivial: any instance can verify any token with just the shared secret,
-so there's no sticky sessions or shared session store to stand up.
+Stateless vs. sessions (the upside). Validity is derived purely from the signature + the `expiration` claim, so authenticating a request is a local crypto check — no per-request DB/session lookup. That also makes horizontal scaling trivial: any instance can verify any token with just the shared secret, so there's no sticky sessions or shared session store to stand up.
 
-The revocation tradeoff (the downside). The flip side of "no server state" is
-that there's nothing to delete to kill a token early. A signed, unexpired JWT
-stays valid until its `expiration` no matter what — logout on the client just
-drops the cookie, but the token itself would still verify if replayed. You
-can't revoke before expiry without reintroducing server state (a denylist /
-token-version check), which gives back the statelessness you bought.
+The revocation tradeoff (the downside). The flip side of "no server state" is that there's nothing to delete to kill a token early. A signed, unexpired JWT stays valid until its `expiration` no matter what — logout on the client just drops the cookie, but the token itself would still verify if replayed. You can't revoke before expiry without reintroducing server state (a denylist / token-version check), which gives back the statelessness you bought.
 
-Mitigation pattern: keep access tokens short-lived and pair them with a
-longer-lived refresh token. A short TTL bounds the damage window of a leaked
-token; the refresh token (revocable, stored server-side) is exchanged for new
-access tokens, so you get most of the stateless benefit while keeping a
-revocation lever.
+Mitigation pattern: keep access tokens short-lived and pair them with a longer-lived refresh token. A short TTL bounds the damage window of a leaked token; the refresh token (revocable, stored server-side) is exchanged for new access tokens, so you get most of the stateless benefit while keeping a revocation lever.
 
-This code's specific limitation: tokens are single-purpose access tokens with a
-30-minute TTL (`app.security.jwt.expiration-minutes`) and **no refresh
-mechanism**. So the practical behavior is: a token is irrevocable for up to 30
-minutes, and when it expires the user is simply forced to log in again (no
-silent refresh). Fine for a POC; a real deployment would add refresh-token
-rotation (already on the follow-ups list).
+This code's specific limitation: tokens are single-purpose access tokens with a 30-minute TTL (`app.security.jwt.expiration-minutes`) and **no refresh mechanism**. So the practical behavior is: a token is irrevocable for up to 30 minutes, and when it expires the user is simply forced to log in again (no silent refresh). Fine for a POC; a real deployment would add refresh-token rotation (already on the follow-ups list).
 
-Takeaway: the signature is the whole trust model — verifying it *is* the
-"session." Everything else about JWTs (the scaling win, the revocation pain) is
-a direct consequence of that one design choice.
+Takeaway: the signature is the whole trust model — verifying it *is* the "session." Everything else about JWTs (the scaling win, the revocation pain) is a direct consequence of that one design choice.
 
 ### Day 5 — Security headers
-Reviewed the response headers set in `SecurityConfig`. Straightforward topic,
-but the point is that each one defends a *different* attack class:
-- **`Content-Security-Policy`** — restricts what the page can load/execute
-  (XSS, injection).
+Reviewed the response headers set in `SecurityConfig`. Straightforward topic, but the point is that each one defends a *different* attack class:
+- **`Content-Security-Policy`** — restricts what the page can load/execute (XSS, injection).
 - **`X-Frame-Options: DENY`** — blocks framing (clickjacking).
-- **`X-Content-Type-Options: nosniff`** — stops MIME sniffing (content-type
-  confusion attacks).
-- **`Referrer-Policy: no-referrer`** — prevents URL/data leakage via the
-  `Referer` header.
+- **`X-Content-Type-Options: nosniff`** — stops MIME sniffing (content-type confusion attacks).
+- **`Referrer-Policy: no-referrer`** — prevents URL/data leakage via the `Referer` header.
 - **HSTS** — forces HTTPS (transport downgrade / SSL stripping).
 
-Two things worth noting. First, `X-Frame-Options: DENY` and the CSP
-`frame-ancestors 'none'` directive overlap on purpose — they defend the same
-clickjacking attack, but CSP `frame-ancestors` is the modern mechanism while
-`X-Frame-Options` is the legacy header older browsers still rely on. Setting
-both is deliberate defense in depth across browser support.
+Two things worth noting. First, `X-Frame-Options: DENY` and the CSP `frame-ancestors 'none'` directive overlap on purpose — they defend the same clickjacking attack, but CSP `frame-ancestors` is the modern mechanism while `X-Frame-Options` is the legacy header older browsers still rely on. Setting both is deliberate defense in depth across browser support.
 
-Second, CSP is the piece that finally gives a *real* XSS defense — the thing I
-didn't have on Day 2 when the takeaway was "`HttpOnly` limits the blast radius
-but doesn't stop the attack." Output encoding + React's escaping prevent most
-injection; CSP backstops it by refusing to execute injected/inline script even
-if something slips through. The current policy is tight (`default-src 'self'`,
-`object-src 'none'`, `base-uri 'self'`).
+Second, CSP is the piece that finally gives a *real* XSS defense — the thing I didn't have on Day 2 when the takeaway was "`HttpOnly` limits the blast radius but doesn't stop the attack." Output encoding + React's escaping prevent most injection; CSP backstops it by refusing to execute injected/inline script even if something slips through. The current policy is tight (`default-src 'self'`, `object-src 'none'`, `base-uri 'self'`).
 
-The tradeoff: a tight CSP breaks third-party integrations (analytics, embedded
-widgets, CDN assets, inline styles/scripts). Every loosening — adding a host to
-a directive, allowing `'unsafe-inline'` — is an expansion of the trust surface,
-so the policy is only as strong as its most permissive directive. For this app,
-same-origin everything keeps it strict; that gets harder the moment real
-third-party scripts show up.
+The tradeoff: a tight CSP breaks third-party integrations (analytics, embedded widgets, CDN assets, inline styles/scripts). Every loosening — adding a host to a directive, allowing `'unsafe-inline'` — is an expansion of the trust surface, so the policy is only as strong as its most permissive directive. For this app, same-origin everything keeps it strict; that gets harder the moment real third-party scripts show up.
 
 ### Day 6 — Client-side routing (feature build, not a deep dive)
-Logging this for completeness rather than as a study session — adding React
-Router was a routine feature, not a security topic. Cursor scaffolded it:
-installed `react-router-dom`, wrapped the entry point (`main.tsx`) in
-`<BrowserRouter>`, split the old single `Dashboard` into an `AppLayout` (shared
-header + `<Outlet/>`), an `AccountsList` at `/`, and an `AccountDetail` at
-`/accounts/:id`, with `<Link>`s between them and a `fetchAccount(id)` API call.
+Logging this for completeness rather than as a study session — adding React Router was a routine feature, not a security topic. Cursor scaffolded it: installed `react-router-dom`, wrapped the entry point (`main.tsx`) in `<BrowserRouter>`, split the old single `Dashboard` into an `AppLayout` (shared header + `<Outlet/>`), an `AccountsList` at `/`, and an `AccountDetail` at `/accounts/:id`, with `<Link>`s between them and a `fetchAccount(id)` API call.
 
 Two things still worth noting:
-- **The auth gate stays outside the routes.** Unauthenticated users get the
-  login screen regardless of URL; `<Routes>` only mount once `user` is set. So
-  routing didn't introduce a new way to bypass auth — the gate is in `App`,
-  above the route tree.
-- **Deep links depend on SPA fallback.** Refreshing `/accounts/ACC-1001` only
-  works because the dev server / `vite preview` serve `index.html` for unknown
-  paths; a real host must replicate that. Noted in the README.
+- **The auth gate stays outside the routes.** Unauthenticated users get the login screen regardless of URL; `<Routes>` only mount once `user` is set. So routing didn't introduce a new way to bypass auth — the gate is in `App`, above the route tree.
+- **Deep links depend on SPA fallback.** Refreshing `/accounts/ACC-1001` only works because the dev server / `vite preview` serve `index.html` for unknown paths; a real host must replicate that. Noted in the README.
 
-No security-relevant surface changed: `/api/accounts/{id}` was already
-owner-scoped server-side, so hitting another user's ID still 404s regardless of
-what the client routes to. Honest takeaway: this was mostly plumbing, and the
-only thing worth a second look was confirming the auth boundary didn't move.
+No security-relevant surface changed: `/api/accounts/{id}` was already owner-scoped server-side, so hitting another user's ID still 404s regardless of what the client routes to. Honest takeaway: this was mostly plumbing, and the only thing worth a second look was confirming the auth boundary didn't move.
 
 ### Day 7 — Transfer endpoint: design first
 
@@ -268,169 +128,63 @@ Implementation starts tomorrow with Phase 1 (entities and in-memory stores).
 
 ### Day 8 — Transfer data layer (Phase 1)
 
-Built the data layer from the Day 7 design: three records (`Transfer`,
-`Transaction`, `IdempotencyKey`) and three `ConcurrentHashMap`-backed stores
-(`TransferStore`, `TransactionStore`, `IdempotencyKeyStore`), plus the
-account-side prep the transfer service will need. PR #1 has the first slice.
+Built the data layer from the Day 7 design: three records (`Transfer`, `Transaction`, `IdempotencyKey`) and three `ConcurrentHashMap`-backed stores (`TransferStore`, `TransactionStore`, `IdempotencyKeyStore`), plus the account-side prep the transfer service will need. PR #1 has the first slice.
 
 Decisions and details worth remembering:
 
-- **Enum placement:** `Status`, `Type`, and `Reason` are nested inside the
-  records that own them rather than top-level files — none of them mean
-  anything apart from their owner, and the package is already 8+ files.
-  Promoting one later is a mechanical refactor, so no need to pre-pay.
-- **`ConcurrentHashMap` vs. `UserStore`'s `LinkedHashMap`:** the existing
-  stores are read-only after construction, so a plain map is fine there.
-  The transfer stores are written on every request, concurrently — hence
-  `ConcurrentHashMap`. One consequence: no insertion order, so `findAll`
-  sorts by ID to keep the dashboard's account ordering stable.
-- **Lazy idempotency expiry:** `IdempotencyKeyStore.find` evicts expired
-  entries on read using the two-arg `remove(key, record)`, so an expiry
-  check that saw a stale record can't delete a fresh one a concurrent
-  `save` just wrote. Also noted: `find`-then-`save` isn't atomic — the
-  real duplicate protection has to live in the service's locked section,
-  not the store.
-- **Account storage refactor:** balances were trapped in an immutable
-  `List.of(...)` inside `AccountService`. Moved storage to a mutable
-  `AccountStore` and reduced the service to the owner-scoping layer (the
-  IDOR filter stays there). Added `Account.withBalance(...)` since records
-  are immutable — debit/credit will be copy-and-save, same as transfer
-  status changes (`PENDING` → `COMPLETED` is a new `Transfer` overwriting
-  the old one by ID).
+- **Enum placement:** `Status`, `Type`, and `Reason` are nested inside the records that own them rather than top-level files — none of them mean anything apart from their owner, and the package is already 8+ files. Promoting one later is a mechanical refactor, so no need to pre-pay.
+- **`ConcurrentHashMap` vs. `UserStore`'s `LinkedHashMap`:** the existing stores are read-only after construction, so a plain map is fine there. The transfer stores are written on every request, concurrently — hence `ConcurrentHashMap`. One consequence: no insertion order, so `findAll` sorts by ID to keep the dashboard's account ordering stable.
+- **Lazy idempotency expiry:** `IdempotencyKeyStore.find` evicts expired entries on read using the two-arg `remove(key, record)`, so an expiry check that saw a stale record can't delete a fresh one a concurrent `save` just wrote. Also noted: `find`-then-`save` isn't atomic — the real duplicate protection has to live in the service's locked section, not the store.
+- **Account storage refactor:** balances were trapped in an immutable `List.of(...)` inside `AccountService`. Moved storage to a mutable `AccountStore` and reduced the service to the owner-scoping layer (the IDOR filter stays there). Added `Account.withBalance(...)` since records are immutable — debit/credit will be copy-and-save, same as transfer status changes (`PENDING` → `COMPLETED` is a new `Transfer` overwriting the old one by ID).
 
-Honest takeaway: no security surface changed today — this was structural
-prep. The interesting concurrency work (lock ordering, validation,
-rollback compensation) is next, and the data layer was shaped specifically
-to make that part testable (`TransactionStore.findByTransferId` exists so
-a test can assert every transfer wrote exactly one debit + one credit).
+Honest takeaway: no security surface changed today — this was structural prep. The interesting concurrency work (lock ordering, validation, rollback compensation) is next, and the data layer was shaped specifically to make that part testable (`TransactionStore.findByTransferId` exists so a test can assert every transfer wrote exactly one debit + one credit).
 
 ### Day 9 — Transfer service: validation, concurrency, atomicity, idempotency (Phase 2)
 
-Built `TransferService` incrementally — one concern per slice — so each layer
-could be reasoned about on its own before stacking the next. Also added the
-`TransferRequest` record (just `destination` + `amount`; the source account
-comes from the path and the user from the authenticated principal, never the
-body) and three `RuntimeException`s mapped to HTTP status codes:
-`AccountNotFoundException` (404), `IdempotencyConflictException` (409),
-`TransferValidationException` (422).
+Built `TransferService` incrementally — one concern per slice — so each layer could be reasoned about on its own before stacking the next. Also added the `TransferRequest` record (just `destination` + `amount`; the source account comes from the path and the user from the authenticated principal, never the body) and three `RuntimeException`s mapped to HTTP status codes: `AccountNotFoundException` (404), `IdempotencyConflictException` (409), `TransferValidationException` (422).
 
 The build order, and what each phase taught me:
 
-- **Validation first (2A).** Ten checks in a deliberate order: existence/ownership
-  failures throw `AccountNotFoundException`, everything else (currency match,
-  amount > 0, amount ≤ 25000, both accounts active, ≤ 2 decimal places, source ≠
-  destination, sufficient balance) throws `TransferValidationException`. Ordering
-  matters: ownership is checked via the same owner-scoped filter as the dashboard,
-  so probing for a foreign source ID 404s exactly like `GET /api/accounts/{id}` —
-  no IDOR signal leaks.
-- **Lock ordering (2B).** Per-account mutexes from a `ConcurrentHashMap`
-  (`computeIfAbsent(id, k -> new Object())`), acquired smaller-ID-first via nested
-  `synchronized` blocks. This is the deadlock-avoidance from the design doc made
-  concrete: without a consistent global order, an X→Y transfer and a concurrent
-  Y→X transfer can each hold one lock and wait on the other. Inside the locks I
-  re-read both accounts and re-check the balance — the validation snapshot from
-  2A is stale the moment another transfer commits, so the authoritative check has
-  to happen under the lock.
-- **Ledger writes + transfer record (2C).** A single `Instant now` is reused for
-  the transfer's `createdAt` and both transaction rows so the three records share
-  one timestamp. Each transfer writes exactly one `DEBIT`/`TRANSFER_OUT` and one
-  `CREDIT`/`TRANSFER_IN`, both linked by `relatedTransferId`.
-- **Rollback compensation (2D).** This is the part the design doc flagged as the
-  cost of not having `@Transactional` on an in-memory store: there's no automatic
-  rollback, so I have to undo by hand. `boolean` flags track which balance saves
-  actually landed; a single `catch (Exception e)` restores only the balances whose
-  flag is set, then `throw e` to preserve the exception *type* (the controller's
-  handler maps type → status). The honest limitation, left as a comment: the
-  ledger/transfer writes are append-only and are **not** undone — production would
-  mark the transfer `FAILED` or write reversing entries.
-- **Idempotency (2E).** SHA-256 over `destination:amount.toPlainString()` becomes
-  the request hash. Lookup is the very first operation: a known key with a
-  matching hash replays by re-fetching the transfer (Option C — `responseBody`
-  stays null), a known key with a *different* hash is the 409 conflict. The record
-  is saved after the locks release with a 24h retention `expiresAt`.
+- **Validation first (2A).** Ten checks in a deliberate order: existence/ownership failures throw `AccountNotFoundException`, everything else (currency match, amount > 0, amount ≤ 25000, both accounts active, ≤ 2 decimal places, source ≠ destination, sufficient balance) throws `TransferValidationException`. Ordering matters: ownership is checked via the same owner-scoped filter as the dashboard, so probing for a foreign source ID 404s exactly like `GET /api/accounts/{id}` — no IDOR signal leaks.
+- **Lock ordering (2B).** Per-account mutexes from a `ConcurrentHashMap` (`computeIfAbsent(id, k -> new Object())`), acquired smaller-ID-first via nested `synchronized` blocks. This is the deadlock-avoidance from the design doc made concrete: without a consistent global order, an X→Y transfer and a concurrent Y→X transfer can each hold one lock and wait on the other. Inside the locks I re-read both accounts and re-check the balance — the validation snapshot from 2A is stale the moment another transfer commits, so the authoritative check has to happen under the lock.
+- **Ledger writes + transfer record (2C).** A single `Instant now` is reused for the transfer's `createdAt` and both transaction rows so the three records share one timestamp. Each transfer writes exactly one `DEBIT`/`TRANSFER_OUT` and one `CREDIT`/`TRANSFER_IN`, both linked by `relatedTransferId`.
+- **Rollback compensation (2D).** This is the part the design doc flagged as the cost of not having `@Transactional` on an in-memory store: there's no automatic rollback, so I have to undo by hand. `boolean` flags track which balance saves actually landed; a single `catch (Exception e)` restores only the balances whose flag is set, then `throw e` to preserve the exception *type* (the controller's handler maps type → status). The honest limitation, left as a comment: the ledger/transfer writes are append-only and are **not** undone — production would mark the transfer `FAILED` or write reversing entries.
+- **Idempotency (2E).** SHA-256 over `destination:amount.toPlainString()` becomes the request hash. Lookup is the very first operation: a known key with a matching hash replays by re-fetching the transfer (Option C — `responseBody` stays null), a known key with a *different* hash is the 409 conflict. The record is saved after the locks release with a 24h retention `expiresAt`.
 
-Biggest takeaway: writing it phase-by-phase made the concurrency reasoning
-tractable. The re-read-under-lock (2B) and the manual rollback (2D) are both
-direct consequences of the same root fact — an in-memory map gives you neither
-snapshot isolation nor automatic rollback, so every guarantee a database would
-hand you for free has to be reconstructed by hand. That's exactly the gap the
-design doc's "POC vs. Production" section predicted, and feeling it in the code is
-more convincing than reading it.
+Biggest takeaway: writing it phase-by-phase made the concurrency reasoning tractable. The re-read-under-lock (2B) and the manual rollback (2D) are both direct consequences of the same root fact — an in-memory map gives you neither snapshot isolation nor automatic rollback, so every guarantee a database would hand you for free has to be reconstructed by hand. That's exactly the gap the design doc's "POC vs. Production" section predicted, and feeling it in the code is more convincing than reading it.
 
-Known gap to revisit: the `find`-then-`save` on the idempotency store still isn't
-atomic across the whole method (the save happens after the locks release), so two
-truly simultaneous first-time requests with the same key could both proceed. The
-design doc's answer is wrapping the idempotency insert in the same transaction as
-the transfer; that lands when this moves to a real datastore.
+Known gap to revisit: the `find`-then-`save` on the idempotency store still isn't atomic across the whole method (the save happens after the locks release), so two truly simultaneous first-time requests with the same key could both proceed. The design doc's answer is wrapping the idempotency insert in the same transaction as the transfer; that lands when this moves to a real datastore.
 
 ### Day 10 — Transfer API layer + first slice of the UI (Phases 3 and 4a)
 
-Wired the Day 9 service to the outside world (Phase 3) and built the frontend up
-to a working "send a transfer" flow (Phase 4a). Two layers, but one theme: the
-service already enforces correctness, so everything today is about *shaping*
-input and output — DTOs, status-code mapping, and a UI that can't easily ask for
-something invalid.
+Wired the Day 9 service to the outside world (Phase 3) and built the frontend up to a working "send a transfer" flow (Phase 4a). Two layers, but one theme: the service already enforces correctness, so everything today is about *shaping* input and output — DTOs, status-code mapping, and a UI that can't easily ask for something invalid.
 
 **Phase 3 — backend API.**
 
-- **Result vs. response split.** Introduced `TransferResult` (`Transfer` +
-  `isReplay`) as the service's return type, separate from `TransferResponse`
-  (`Transfer` + `message`) on the wire. The reason is that the 200-vs-201
-  decision is the *controller's* job, not the service's — the service just
-  reports whether it executed or replayed, and the controller maps replay → 200
-  "Transfer already processed" and new → 201 "Transfer created". Keeping the HTTP
-  vocabulary out of the service keeps it testable without a web context.
-- **Centralized error mapping.** `GlobalExceptionHandler` (`@ControllerAdvice`)
-  turns the three domain exceptions into `ErrorResponse` payloads with the right
-  codes (404/409/422) using each exception's own message, plus a catch-all
-  `Exception` → 500 with a *hardcoded* "An unexpected error occurred" and an
-  SLF4J `log.error` before responding. The split is deliberate: domain messages
-  are safe to show; anything unexpected gets logged server-side and sanitized on
-  the way out so internals never leak to the client.
-- **The directory endpoint and its privacy tradeoff.** The destination picker
-  needs to see accounts the user doesn't own, which breaks the owner-scoping rule
-  the whole `AccountService` was built around. Handled it by making that the one
-  explicit exception: `findDirectory()` returns a sanitized `AccountDirectoryEntry`
-  (`id`, `currency`, `owner` — no balance, no status) and filters to ACTIVE only,
-  with the class Javadoc updated to call out the carve-out. Honest tension noted
-  in the design doc already: exposing `owner` by account ID enables enumeration,
-  accepted for the POC.
+- **Result vs. response split.** Introduced `TransferResult` (`Transfer` + `isReplay`) as the service's return type, separate from `TransferResponse` (`Transfer` + `message`) on the wire. The reason is that the 200-vs-201 decision is the *controller's* job, not the service's — the service just reports whether it executed or replayed, and the controller maps replay → 200 "Transfer already processed" and new → 201 "Transfer created". Keeping the HTTP vocabulary out of the service keeps it testable without a web context.
+- **Centralized error mapping.** `GlobalExceptionHandler` (`@ControllerAdvice`) turns the three domain exceptions into `ErrorResponse` payloads with the right codes (404/409/422) using each exception's own message, plus a catch-all `Exception` → 500 with a *hardcoded* "An unexpected error occurred" and an SLF4J `log.error` before responding. The split is deliberate: domain messages are safe to show; anything unexpected gets logged server-side and sanitized on the way out so internals never leak to the client.
+- **The directory endpoint and its privacy tradeoff.** The destination picker needs to see accounts the user doesn't own, which breaks the owner-scoping rule the whole `AccountService` was built around. Handled it by making that the one explicit exception: `findDirectory()` returns a sanitized `AccountDirectoryEntry` (`id`, `currency`, `owner` — no balance, no status) and filters to ACTIVE only, with the class Javadoc updated to call out the carve-out. Honest tension noted in the design doc already: exposing `owner` by account ID enables enumeration, accepted for the POC.
 
 **Phase 4a — frontend.**
 
-- **Typed error surfacing.** Reworked `request<T>` so a non-OK response tries to
-  parse the JSON body and lift its `message` into `ApiError`, falling back to the
-  generic text. This is what makes the backend's `ErrorResponse` actually useful —
-  the transfer form now shows "Insufficient balance" or the 409 conflict message
-  verbatim instead of a generic "request failed." Narrowed the body as `unknown`
-  rather than casting so it stays honest under `tsc`.
-- **Feature-agnostic Modal.** Built a reusable `Modal` (escape-to-close,
-  click-outside-to-close, `role="dialog"`/`aria-modal`/`aria-labelledby`) with no
-  transfer knowledge in it. Noted limitations for later: no focus trap, no
-  body-scroll lock — fine for the POC, but the accessibility gaps are real.
-- **The form, and where the idempotency key comes from.** `TransferForm` pulls
-  the directory, filters out the source account client-side, and generates its
-  idempotency key with the browser-native `crypto.randomUUID()` held in a
-  `useMemo` so a retry of the same submission reuses one key (that's the whole
-  point — a double-click replays rather than double-sends). Sidesteps a dependency
-  too: tried `npm install uuid` and hit a corporate-TLS
-  `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, but the built-in needs no package at all.
-- **Wiring + a deliberate stub.** `AccountDetail` gets a Transfer button (only when
-  ACTIVE) that opens the modal; on success it closes and navigates to
-  `/transfers/:id`, which currently renders a `TransferDetail` placeholder. Added
-  the route before the catch-all (order matters in React Router). The stub exists
-  so the success path has a real destination now and the detail view can be built
-  next without rework.
+- **Typed error surfacing.** Reworked `request<T>` so a non-OK response tries to parse the JSON body and lift its `message` into `ApiError`, falling back to the generic text. This is what makes the backend's `ErrorResponse` actually useful — the transfer form now shows "Insufficient balance" or the 409 conflict message verbatim instead of a generic "request failed." Narrowed the body as `unknown` rather than casting so it stays honest under `tsc`.
+- **Feature-agnostic Modal.** Built a reusable `Modal` (escape-to-close, click-outside-to-close, `role="dialog"`/`aria-modal`/`aria-labelledby`) with no transfer knowledge in it. Noted limitations for later: no focus trap, no body-scroll lock — fine for the POC, but the accessibility gaps are real.
+- **The form, and where the idempotency key comes from.** `TransferForm` pulls the directory, filters out the source account client-side, and generates its idempotency key with the browser-native `crypto.randomUUID()` held in a `useMemo` so a retry of the same submission reuses one key (that's the whole point — a double-click replays rather than double-sends). Sidesteps a dependency too: tried `npm install uuid` and hit a corporate-TLS `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, but the built-in needs no package at all.
+- **Wiring + a deliberate stub.** `AccountDetail` gets a Transfer button (only when ACTIVE) that opens the modal; on success it closes and navigates to `/transfers/:id`, which currently renders a `TransferDetail` placeholder. Added the route before the catch-all (order matters in React Router). The stub exists so the success path has a real destination now and the detail view can be built next without rework.
 
-Biggest takeaway: the client-side guards (filtering the source out of the picker,
-disabling submit on empty fields, ACTIVE-only transfer button) are *UX*, not
-security. Every one of them is also enforced server-side in the Day 9 service,
-because the API is reachable without the form. The frontend's job is to make the
-valid path easy; the backend's job is to make the invalid path impossible. Today
-was a good reminder to keep those responsibilities from blurring.
+Biggest takeaway: the client-side guards (filtering the source out of the picker, disabling submit on empty fields, ACTIVE-only transfer button) are *UX*, not security. Every one of them is also enforced server-side in the Day 9 service, because the API is reachable without the form. The frontend's job is to make the valid path easy; the backend's job is to make the invalid path impossible. Today was a good reminder to keep those responsibilities from blurring.
 
-Next: build out `TransferDetail` for real (fetch + render the transfer), and the
-defense-in-depth check that the directory endpoint can't be hit anonymously.
+Next: build out `TransferDetail` for real (fetch + render the transfer), and the defense-in-depth check that the directory endpoint can't be hit anonymously.
+
+### Day 11 — Transfer lookup endpoint + real detail page (Phase 4b)
+
+Built `GET /api/transfers/{id}` and replaced the Day 10 placeholder with a real `TransferDetail` page. The read endpoint lives in a new `TransferLookupController` rather than extending `TransferController`, and the URL split is deliberate: the create endpoint is nested under `/api/accounts/{accountId}/transfers` because the source account is part of the resource identity at POST time — you're creating a transfer *from* a specific account, and that belongs in the path. Once a transfer exists it's a first-class resource in its own right; nesting the read endpoint under an account path would force an arbitrary choice of which account to nest it under. A separate controller at `/api/transfers/{id}` captures that semantic without renaming anything that's already wired.
+
+The visibility rule in `TransferService.findById` is the first place the project's single-owner IDOR pattern bends. Every previous owner check is a filter applied to one account; this one checks source OR destination, because both parties have a legitimate reason to see the same transfer — the sender confirming it went, the receiver confirming it arrived. When neither side matches, the service throws `TransferNotFoundException("Transfer not found")` — the same response a genuinely missing transfer produces, for the same reason as the account endpoints: access-denied and not-found should be indistinguishable to the caller, so transfer existence can't be inferred from the response shape. That negative case was confirmed by code review rather than a live request, since the POC has no third test user; it's a real coverage gap. The `TransferDetailView` DTO resolves `owner` and `currency` server-side via a nested `AccountRef` so the frontend needs no follow-up lookups. `AccountRef` intentionally omits balance and status for the same reason as `AccountDirectoryEntry` — both parties can read the detail view, so it can't carry fields that belong only to the account owner.
+
+On the frontend, `TransferDetail` mirrors `AccountDetail` in structure: `useEffect` fetch, three-state render (loading / error / data), a 404-specific friendly message, and status rendered via new `.badge--completed` / `.badge--failed` / `.badge--pending` CSS modifiers rather than reusing `.badge--active` / `.badge--frozen` — the color semantics overlap but the class names would be lying about their data. Currency and datetime are formatted via `Intl.NumberFormat` and `Intl.DateTimeFormat` with no added dependency. One wire-format detail worth logging: `TransferDetailView.amount` is typed as `number` on the frontend, matching what Jackson actually produces from `BigDecimal` by default. The `Transfer` interface from Day 10 had `amount: string` as a hedge against floating-point precision loss, but the wire format is a JSON number, and aligning the type also makes it consistent with `Account.balance`. At POC scale — 25k transfer cap, two decimal places — the precision risk is theoretical; it becomes real for larger amounts or more significant digits and belongs on the Phase 5 list.
+
+Biggest takeaway: the source-OR-destination check is a small change in code but a meaningful shift in the access-control model. Every earlier check in the project fits the rule "the authenticated user owns this resource." Transfers don't: two users each own a piece of the same resource, so the rule becomes "the authenticated user owns *some* part of this resource." The 404-for-everything principle still applies unchanged — what changes is the shape of the ownership predicate. Recognizing that an existing pattern can flex to cover a new case without replacing itself is the kind of thing that gets easier to spot as the patterns accumulate.
 
 ## Open questions / follow-ups
 
