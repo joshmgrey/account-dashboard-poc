@@ -28,3 +28,20 @@ export interface Transfer {
   createdAt: string
   idempotencyKey: string
 }
+
+export interface AccountRef {
+  id: string
+  owner: string
+  currency: string
+}
+
+export interface TransferDetailView {
+  id: string
+  amount: number  // BigDecimal serialized as JSON number by Jackson
+  currency: string
+  status: 'COMPLETED' | 'FAILED' | 'PENDING'
+  createdAt: string  // ISO timestamp
+  source: AccountRef
+  destination: AccountRef
+  idempotencyKey: string
+}

@@ -118,6 +118,21 @@ body {
   color: #b91c1c;
 }
 
+.badge--completed {
+  background: #e3f9e5;
+  color: #207a3b;
+}
+
+.badge--failed {
+  background: #fce8e6;
+  color: #b91c1c;
+}
+
+.badge--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .accounts__total {
   margin-top: 1rem;
   text-align: right;

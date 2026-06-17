@@ -1,4 +1,4 @@
-import type { Account, AccountDirectoryEntry, Transfer, User } from './types'
+import type { Account, AccountDirectoryEntry, Transfer, TransferDetailView, User } from './types'
 
 /** Thrown for non-2xx responses, carrying the HTTP status for callers. */
 export class ApiError extends Error {
@@ -103,4 +103,8 @@ export function createTransfer(
       body: JSON.stringify(body),
     },
   )
+}
+
+export function fetchTransfer(transferId: string): Promise<TransferDetailView> {
+  return request<TransferDetailView>(`/api/transfers/${encodeURIComponent(transferId)}`)
 }
