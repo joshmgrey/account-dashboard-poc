@@ -43,4 +43,12 @@ public class TransactionStore {
                 .sorted(Comparator.comparing(Transaction::createdAt))
                 .toList();
     }
+
+    /**
+     * Wipes the store's contents. Test-only — provided for integration tests
+     * that need a clean slate between cases. Do not call from production code.
+     */
+    public void clearForTest() {
+        transactionsById.clear();
+    }
 }

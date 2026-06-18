@@ -34,4 +34,12 @@ public class TransferStore {
                 .filter(transfer -> idempotencyKey.equals(transfer.idempotencyKey()))
                 .findFirst();
     }
+
+    /**
+     * Wipes the store's contents. Test-only — provided for integration tests
+     * that need a clean slate between cases. Do not call from production code.
+     */
+    public void clearForTest() {
+        transfersById.clear();
+    }
 }

@@ -36,4 +36,12 @@ public class IdempotencyKeyStore {
     public void save(IdempotencyKey record) {
         recordsByKey.put(record.key(), record);
     }
+
+    /**
+     * Wipes the store's contents. Test-only — provided for integration tests
+     * that need a clean slate between cases. Do not call from production code.
+     */
+    public void clearForTest() {
+        recordsByKey.clear();
+    }
 }

@@ -20,6 +20,10 @@ public class AccountStore {
     private final Map<String, Account> accountsById = new ConcurrentHashMap<>();
 
     public AccountStore() {
+        seedDemoAccounts();
+    }
+
+    private void seedDemoAccounts() {
         save(new Account("ACC-1001", "alice", "Operating Checking", "CHECKING", "USD",
                 new BigDecimal("128450.72"), "ACTIVE"));
         save(new Account("ACC-1002", "alice", "Payroll", "CHECKING", "USD",
@@ -47,5 +51,16 @@ public class AccountStore {
         return accountsById.values().stream()
                 .sorted(Comparator.comparing(Account::id))
                 .toList();
+    }
+
+    /**
+     * Wipes the store's contents. Test-only — provided for integration tests
+     * that need a clean slate between cases. Do not call from production code.
+     * After clearing, re-seeds the demo accounts so tests can rely on their
+     * presence.
+     */
+    public void clearForTest() {
+        accountsById.clear();
+        seedDemoAccounts();
     }
 }
