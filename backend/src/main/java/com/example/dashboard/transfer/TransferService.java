@@ -17,9 +17,14 @@ import com.example.dashboard.account.Account;
 import com.example.dashboard.account.AccountStore;
 
 /**
- * Coordinates money transfers for the POC. This method currently performs
- * only business validation; locking, balance mutation, ledger writes, and
- * idempotency handling are added in later steps.
+ * Coordinates money transfers for the POC. Implements input validation,
+ * deterministic per-account locking with re-read-and-re-validate inside the
+ * lock, atomic balance updates and ledger writes, manual rollback compensation
+ * on failure, and idempotency via the Idempotency-Key header. Also provides
+ * read-side lookup ({@link #findById}) restricted to source or destination
+ * account owners. Pairs with {@link TransferController} (create) and
+ * {@link TransferLookupController} (read); see TRANSFER_DESIGN.md for the full
+ * design rationale.
  */
 @Service
 public class TransferService {
