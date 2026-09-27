@@ -255,6 +255,18 @@ class TransferIntegrationTests {
     }
 
     @Test
+    void failedRequest_releasesIdempotencyKeyForRetry() throws Exception {
+        Cookie auth = loginAs("alice", "Password123!");
+        String idempotencyKey = newIdempotencyKey();
+
+        postTransfer(auth, "ACC-1001", idempotencyKey, "ACC-2001", "25001")
+                .andExpect(status().isUnprocessableEntity());
+
+        postTransfer(auth, "ACC-1001", idempotencyKey, "ACC-2001", "100.00")
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     void missingIdempotencyKey_returns500() throws Exception {
         // Spring throws MissingRequestHeaderException for the missing required header,
         // which falls through to the catch-all Exception handler. Production should

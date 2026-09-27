@@ -53,11 +53,25 @@ public class TransferService {
                                          String sourceAccountId,
                                          String idempotencyKey,
                                          TransferRequest request) {
-        String requestHash = hashRequest(request);
-        Optional<IdempotencyKey> existingKey = idempotencyKeyStore.find(idempotencyKey);
+        String requestHash = hashRequest(authenticatedUsername, sourceAccountId, request);
+        Instant reservedAt = Instant.now();
+        IdempotencyKey reservation = new IdempotencyKey(
+                idempotencyKey,
+                requestHash,
+                null,
+                reservedAt,
+                reservedAt.plus(IDEMPOTENCY_RETENTION),
+                IdempotencyKey.Status.IN_PROGRESS);
+
+        // Reserve the key before doing any work. A check-then-save here would let
+        // concurrent duplicates all see "no key" and each execute the transfer.
+        Optional<IdempotencyKey> existingKey = idempotencyKeyStore.reserve(reservation);
         if (existingKey.isPresent()) {
             if (!existingKey.get().requestHash().equals(requestHash)) {
                 throw new IdempotencyConflictException("Idempotency key already used with a different request");
+            }
+            if (existingKey.get().status() == IdempotencyKey.Status.IN_PROGRESS) {
+                throw new IdempotencyConflictException("A request with this idempotency key is already in progress");
             }
             Transfer existingTransfer = transferStore.findByIdempotencyKey(idempotencyKey)
                     .orElseThrow(() -> new IllegalStateException(
@@ -65,6 +79,23 @@ public class TransferService {
             return new TransferResult(existingTransfer, true);
         }
 
+        Transfer transfer;
+        try {
+            transfer = executeTransfer(authenticatedUsername, sourceAccountId, idempotencyKey, request);
+        } catch (RuntimeException e) {
+            // Nothing was committed, so free the key and let the client retry with it.
+            idempotencyKeyStore.release(reservation);
+            throw e;
+        }
+
+        idempotencyKeyStore.save(reservation.completed());
+        return new TransferResult(transfer, false);
+    }
+
+    private Transfer executeTransfer(String authenticatedUsername,
+                                     String sourceAccountId,
+                                     String idempotencyKey,
+                                     TransferRequest request) {
         Account source = accountStore.findById(sourceAccountId)
                 .filter(account -> account.owner().equals(authenticatedUsername))
                 .orElseThrow(() -> new AccountNotFoundException("Source account not found"));
@@ -167,15 +198,7 @@ public class TransferService {
                 }
             }
         }
-
-        Instant savedAt = Instant.now();
-        idempotencyKeyStore.save(new IdempotencyKey(
-                idempotencyKey,
-                requestHash,
-                null,
-                savedAt,
-                savedAt.plus(IDEMPOTENCY_RETENTION)));
-        return new TransferResult(transfer, false);
+        return transfer;
     }
 
     /**
@@ -216,10 +239,16 @@ public class TransferService {
         );
     }
 
-    private String hashRequest(TransferRequest request) {
+    /**
+     * Hashes the caller and source account along with the body, so a key reused
+     * by another user or from another account is a 409 conflict rather than a
+     * replay of someone else's transfer.
+     */
+    private String hashRequest(String authenticatedUsername, String sourceAccountId, TransferRequest request) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            String payload = request.destination() + ":" + request.amount().toPlainString();
+            String payload = authenticatedUsername + ":" + sourceAccountId + ":"
+                    + request.destination() + ":" + request.amount().toPlainString();
             byte[] hash = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(hash.length * 2);
             for (byte b : hash) {
