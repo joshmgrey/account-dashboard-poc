@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.dashboard.transfer.AccountNotFoundException;
 import com.example.dashboard.transfer.IdempotencyConflictException;
@@ -41,6 +42,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TransferNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleTransferNotFound(TransferNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(e.getMessage()));
+    }
+
+    // Controllers throw ResponseStatusException with a deliberate status (e.g. 401
+    // for bad credentials, 429 for lockout); keep it rather than letting the
+    // catch-all below turn it into a 500.
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException e) {
+        return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
     }
 
     @ExceptionHandler(Exception.class)
