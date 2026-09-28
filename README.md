@@ -105,7 +105,21 @@ Concurrency is handled with per-account mutexes. Because a transfer touches two 
 
 Atomicity is reconstructed by hand, since there is no database transaction to lean on. A single `Instant.now()` is captured and shared across the transfer record and both ledger entries, so the debit and credit carry the same timestamp. Balances are mutated in sequence, and if any step in that sequence fails, manual rollback compensation restores the account balances to their pre-transfer values. The honest limitation: ledger writes are append-only and are **not** undone in this POC — if a failure happened after a ledger entry was appended, that entry would remain. A production system would instead mark the transfer `FAILED` or write explicit reversing entries rather than deleting history.
 
-Idempotency is keyed on the `Idempotency-Key` header plus a SHA-256 hash of the request's destination and amount. If the same key arrives again with the same hash, the server returns `200 OK` and replays the existing transfer instead of moving money twice. If the same key arrives with a *different* hash — a different destination or amount — that is a client error and the server returns `409 Conflict`. Keys are retained for 24 hours on an absolute basis, with no rolling refresh on access. Only successful transfers are recorded as idempotent; a request that fails validation is not stored, so a corrected retry is processed normally rather than replaying a stale failure.
+Idempotency is keyed on the `Idempotency-Key` header plus a SHA-256 hash of the caller, source account, destination and amount. The key is reserved atomically as in-progress before any work is done, so concurrent requests with the same key can never both execute. If the same key arrives again with the same hash, the server returns `200 OK` and replays the existing transfer instead of moving money twice; if the original is still in flight, it returns `409 Conflict` and the client can retry shortly. If the same key arrives with a *different* hash — a different caller, source, destination or amount — that is a client error and the server returns `409 Conflict`. Keys are retained for 24 hours on an absolute basis, with no rolling refresh on access. Only successful transfers are recorded as idempotent; a request that fails releases its key, so a corrected retry is processed normally rather than replaying a stale failure.
+
+### Load testing
+
+[`scripts/load-test-transfers.mjs`](scripts/load-test-transfers.mjs) fires concurrent transfers in both directions between the same accounts, then checks that every balance equals its starting value plus the net of the successful transfers, to the cent. The per-IP rate limit would reject most of this traffic, so raise it for the test run only:
+
+```bash
+cd backend && mvn spring-boot:run -Dspring-boot.run.arguments="--app.ratelimit.capacity=1000000 --app.ratelimit.refill-per-minute=1000000"
+```
+
+```bash
+node scripts/load-test-transfers.mjs --requests 1000 --concurrency 50 --warmup 200
+```
+
+Across three local runs of 1,000 transfers (concurrency 50, after 200 warm-up requests), all transfers succeeded at 943–998 req/sec with p95 latency of 60–99 ms, and every balance reconciled exactly.
 
 See [`TRANSFER_DESIGN.md`](TRANSFER_DESIGN.md) for the full design spec, and [`AI_WORKFLOW.md`](AI_WORKFLOW.md) (Days 7–11) for the implementation walkthrough. This is a POC implementation of patterns that production banking systems normally get from database transactions and ACID guarantees; the design doc spells out what each in-memory mechanism — the mutexes, the manual rollback, the idempotency store — would be replaced with in a real deployment.
 
