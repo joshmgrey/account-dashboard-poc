@@ -30,6 +30,29 @@ account-dashboard-poc/
 └── frontend/   # Vite + React + TypeScript SPA
 ```
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser["Browser<br/>React SPA"]
+    Vite["Vite dev server<br/>:5173"]
+
+    subgraph Backend["Spring Boot backend :8080"]
+        direction TB
+        Filters["Filter chain<br/>RateLimitFilter → JwtAuthenticationFilter"]
+        Controllers["Controllers<br/>Auth · Account · Transfer · TransferLookup"]
+        Services["Services<br/>AccountService · TransferService · LoginAttemptService"]
+        Stores[("In-memory stores<br/>User · Account · Transfer · Transaction · IdempotencyKey")]
+        Filters --> Controllers --> Services --> Stores
+    end
+
+    Browser -- "static assets" --> Vite
+    Browser -- "/api/* + httpOnly JWT cookie" --> Vite
+    Vite -- "proxy /api/*" --> Filters
+```
+
+In development the browser only talks to the Vite origin, which proxies `/api/*` to Spring Boot. Each request passes the per-IP rate limiter, then is authenticated from the JWT cookie before reaching a controller. All state lives in in-memory stores, so it resets when the backend restarts.
+
 ## Prerequisites
 
 - Java 21+
@@ -60,6 +83,40 @@ cd frontend && npm install && npm run dev
 ```
 
 Then open `http://localhost:5173` and sign in.
+
+## Testing
+
+```bash
+cd backend && mvn test     # runs the tests and writes the JaCoCo report
+cd backend && mvn verify   # also enforces the coverage gate (≥ 50% line coverage)
+```
+
+The HTML coverage report is written to `backend/target/site/jacoco/index.html`.
+
+Last run (2026-10-12): **38 tests, all passing**, all of them Spring Boot integration tests:
+
+| Test class                             | Tests |
+| -------------------------------------- | ----: |
+| `TransferIntegrationTests`             | 15    |
+| `TransferIdempotencyConcurrencyTests`  | 10    |
+| `DashboardApplicationTests`            | 5     |
+| `TransferLookupIntegrationTests`       | 5     |
+| `DirectoryIntegrationTests`            | 3     |
+
+Backend coverage (JaCoCo):
+
+| Package     | Instructions | Branches |
+| ----------- | -----------: | -------: |
+| `transfer`  | 91%          | 80%      |
+| `security`  | 90%          | 70%      |
+| `account`   | 91%          | 50%      |
+| `auth`      | 79%          | 100%     |
+| `user`      | 96%          | 50%      |
+| `config`    | 100%         | n/a      |
+| (root: exception handler, app) | 93% | n/a |
+| **Total**   | **91%**      | **76%**  |
+
+Line coverage overall is 90% (529 of 587 lines). The frontend has no automated tests yet.
 
 ## API
 
